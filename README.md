@@ -17,27 +17,23 @@ This separation prevents the diabetic retinopathy classifier from being forced t
 
 ## ✨ Overview
 
-A standard five-class diabetic retinopathy classifier assumes that every input image belongs to one of its five known classes.
+The system is designed to ensure that the diabetic retinopathy classifier receives **only retinal fundus images**.
 
-This creates an important limitation.
-
-If an image of a:
-
-- Dog
-- Car
-- Person
-- Document
-- Screenshot
-- Landscape
-- Random photograph
-
-is given directly to the DR classifier, the model may still assign it to one of the five DR classes because it has no concept of a "Non-Fundus" class.
-
-To address this, this project introduces a dedicated **Fundus Detection Model** before the main diabetic retinopathy classifier.
-
-The final system therefore follows:
+Every uploaded image is first passed through a dedicated **Fundus Detection Model**, which determines whether the image is a valid retinal fundus image.
 
 ```text
+User Image
+    │
+    ▼
+Fundus Detection Model
+    │
+    ├── Retinal Fundus Image ──→ Continue to DR Classifier
+    │
+    └── Non-Retinal Image ────→ Discard / Reject
+```
+The final system therefore follows:
+
+
                          USER IMAGE
                               │
                               ▼
@@ -71,7 +67,7 @@ The final system therefore follows:
                                           │
                                           ▼
                                      Grad-CAM
-```
+
 
 
 # 🎯 Project Objectives
@@ -81,8 +77,8 @@ The project is built around four main objectives:
 ### 1. Detect Valid Fundus Images
 
 The first model determines whether the uploaded image is a retinal fundus photograph.
+```
 
-```text
 Input Image
      ↓
 Fundus Detection Model
@@ -146,7 +142,7 @@ The dataset contains retinal fundus images representing five stages of diabetic 
 
 The original dataset contains approximately **10,000 augmented fundus images**, with approximately 2,000 images per class.
 
-```text
+```
 APTOS2019
 │
 ├── 0 — No DR
@@ -214,4 +210,136 @@ The cleaned dataset was divided into three independent partitions using a **stra
           TRAINING         VALIDATION          TEST
            6,887             1,476            1,476
             70%               15%              15%
+```
+# 🧠 Model Architecture
+
+The system uses **two independently trained deep-learning models**, each designed for a specific task.
+
+The first model validates the input image domain, while the second model performs diabetic retinopathy severity classification.
+
+```text
+                     INPUT IMAGE
+                          │
+                          ▼
+                ┌──────────────────┐
+                │  FUNDUS DETECTOR │
+                └────────┬─────────┘
+                         │
+                  ┌──────┴──────┐
+                  │             │
+              Non-Fundus       Fundus
+                  │             │
+                  ▼             ▼
+                REJECT     DR CLASSIFIER
+                                │
+                                ▼
+                         5 DR Classes
+```
+## 🩻 Model 2 — Diabetic Retinopathy Classifier
+
+The second stage of the pipeline performs the actual **diabetic retinopathy severity classification**.
+
+This model is invoked **only after the Fundus Detector identifies the input as a fundus image**.
+
+Its responsibility is strictly limited to answering:
+
+> **"What level of diabetic retinopathy is present in this fundus image?"**
+
+### Classification Output
+
+The model performs five-class classification:
+
+| Label | Prediction |
+|:---:|---|
+| **0** | No DR |
+| **1** | Mild DR |
+| **2** | **Moderate DR 🎯** |
+| **3** | Severe DR |
+| **4** | Proliferative DR |
+
+The model produces a probability distribution across all five classes before selecting the final prediction.
+
+### Model Pipeline
+
+```text
+                    FUNDUS IMAGE
+                         │
+                         ▼
+                 Resize: 224 × 224
+                         │
+                         ▼
+                 Data Augmentation
+                         │
+                         ▼
+                  EfficientNetB0
+              ImageNet Pretrained Weights
+                         │
+                         ▼
+             Global Average Pooling
+                         │
+                         ▼
+                      Dropout
+                         │
+                         ▼
+                   Dense Layer
+                         │
+                         ▼
+                      Dropout
+                         │
+                         ▼
+                 Softmax Activation
+                         │
+                         ▼
+                  5-Class Output
+```
+---
+
+# 🔗 Combined Architecture
+
+The complete system follows a **sequential two-stage deep-learning architecture**.
+
+Instead of sending every uploaded image directly to the diabetic retinopathy classifier, the system first determines whether the image belongs to the fundus domain.
+
+Only a validated fundus image is allowed to proceed to the DR classification stage.
+
+```text
+                              USER IMAGE
+                                  │
+                                  ▼
+                    ┌─────────────────────────┐
+                    │     FUNDUS DETECTOR     │
+                    │                         │
+                    │     Binary Classifier   │
+                    │     EfficientNetB0      │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+                    ▼                         ▼
+              NON-FUNDUS                   FUNDUS
+                    │                         │
+                    ▼                         ▼
+             ┌─────────────┐       ┌─────────────────────┐
+             │    REJECT   │       │   DR CLASSIFIER     │
+             │             │       │                     │
+             │ Invalid     │       │   EfficientNetB0    │
+             │ Input       │       │   5-Class Classifier │
+             └─────────────┘       └──────────┬──────────┘
+                                              │
+                                              ▼
+                                   ┌────────────────────┐
+                                   │   DR SEVERITY      │
+                                   ├────────────────────┤
+                                   │  0  No DR          │
+                                   │  1  Mild DR        │
+                                   │  2  Moderate DR 🎯 │
+                                   │  3  Severe DR      │
+                                   │  4  Proliferative  │
+                                   └──────────┬─────────┘
+                                              │
+                                              ▼
+                                       ┌─────────────┐
+                                       │  Grad-CAM   │
+                                       │ Explanation │
+                                       └─────────────┘
 ```

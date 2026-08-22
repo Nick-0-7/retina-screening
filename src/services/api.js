@@ -3,7 +3,12 @@
  * Handles communication with the FastAPI backend endpoint POST /predict
  */
 
-export const PREDICT_ENDPOINT = 'http://localhost:8000/predict';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '');
+export const PREDICT_ENDPOINT = API_BASE_URL 
+  ? (API_BASE_URL.endsWith('/') ? `${API_BASE_URL}predict` : `${API_BASE_URL}/predict`)
+  : '/predict';
+
+
 
 /**
  * Predict Diabetic Retinopathy severity from fundus image file or blob/dataUrl
@@ -62,7 +67,8 @@ export async function analyzeRetinalImage(imageInput) {
     if (err.name === 'AbortError') {
       throw new Error('Analysis timed out. Please check if the backend server is responsive.');
     }
-    throw new Error(err.message || 'Failed to communicate with AI Backend at http://localhost:8000/predict');
+    throw new Error(err.message || `Failed to communicate with AI Backend at ${PREDICT_ENDPOINT}`);
+
   }
 }
 

@@ -1,6 +1,6 @@
 """
-DR Vision AI - Python FastAPI Backend Endpoint
-Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained Keras Deep Learning Model.
+DR Vision AI - Python FastAPI Backend Endpoint (ONNX Runtime Powered)
+Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained ONNX model.
 """
 
 import os
@@ -10,13 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import numpy as np
 
-# Suppress verbose TensorFlow logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
 app = FastAPI(
     title="DR Vision AI Backend API",
-    description="Diabetic Retinopathy Detection using trained Keras deep learning model",
-    version="1.1.0"
+    description="Diabetic Retinopathy Detection using high-performance ONNX deep learning model",
+    version="1.2.0"
 )
 
 # Enable CORS for React frontend
@@ -31,65 +28,70 @@ app.add_middleware(
 CLASSES = ["No_DR", "Mild", "Moderate", "Severe", "Proliferate_DR"]
 
 # Global model state
-model = None
+ort_session = None
+input_name = None
+output_name = None
 model_attempted = False
+
 model_info = {
     "loaded": False,
     "source_path": None,
-    "input_shape": None,
-    "output_shape": None,
+    "engine": "ONNX Runtime",
     "classes": CLASSES
 }
 
-# Auto-discover model location
-MODEL_CANDIDATES = [
-    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.keras"),
-    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.keras"),
+# Auto-discover ONNX model location
+ONNX_CANDIDATES = [
+    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.onnx"),
+    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.onnx"),
 ]
 
-def load_trained_keras_model():
-    global model, model_info, model_attempted
+def load_onnx_model():
+    global ort_session, input_name, output_name, model_info, model_attempted
     if model_attempted:
-        return model
+        return ort_session
     model_attempted = True
+    
     try:
-        import keras
-        for candidate_path in MODEL_CANDIDATES:
+        import onnxruntime as ort
+        for candidate_path in ONNX_CANDIDATES:
             if os.path.exists(candidate_path):
-                print(f"[DR Vision AI] Found trained model at: {candidate_path}")
-                loaded = keras.models.load_model(candidate_path, compile=False)
-                in_shape = loaded.input_shape
-                out_shape = loaded.output_shape
+                print(f"[DR Vision AI] Loading ONNX model from: {candidate_path}")
+                session = ort.InferenceSession(candidate_path, providers=['CPUExecutionProvider'])
+                in_name = session.get_inputs()[0].name
+                out_name = session.get_outputs()[0].name
+                
+                ort_session = session
+                input_name = in_name
+                output_name = out_name
                 
                 model_info["loaded"] = True
                 model_info["source_path"] = candidate_path
-                model_info["input_shape"] = [str(dim) for dim in in_shape]
-                model_info["output_shape"] = [str(dim) for dim in out_shape]
-                model = loaded
-                print(f"[DR Vision AI] Model successfully loaded!")
-                return model
-        print("[DR Vision AI] No .keras model file found. Will use fallback simulator.")
+                print(f"[DR Vision AI] ONNX Model loaded successfully!")
+                return ort_session
+        print("[DR Vision AI] No .onnx model file found. Checking Keras fallback...")
     except Exception as e:
-        print(f"[DR Vision AI] Error loading Keras model: {e}")
+        print(f"[DR Vision AI] ONNX load error: {e}")
+        
     return None
 
 @app.get("/")
 @app.get("/api")
 @app.get("/api/index")
 def read_root():
-    m = load_trained_keras_model()
+    load_onnx_model()
     return {
         "status": "online",
         "service": "DR Vision AI Endpoint",
         "model_loaded": model_info["loaded"],
-        "model_path": model_info["source_path"],
+        "engine": model_info["engine"],
         "endpoint": "POST /predict"
     }
 
 @app.get("/model-info")
 @app.get("/api/model-info")
 def get_model_info():
-    load_trained_keras_model()
+    load_onnx_model()
     return model_info
 
 @app.post("/predict")
@@ -115,25 +117,20 @@ async def predict(request: Request, file: UploadFile = File(None)):
     if contents is None or len(contents) == 0:
         return get_fallback_prediction()
 
-    m = load_trained_keras_model()
+    session = load_onnx_model()
 
-    if m is not None:
+    if session is not None:
         try:
-            target_h = 224
-            target_w = 224
-            if hasattr(m, 'input_shape') and len(m.input_shape) == 4:
-                target_h = m.input_shape[1] if m.input_shape[1] is not None else 224
-                target_w = m.input_shape[2] if m.input_shape[2] is not None else 224
-
             img = Image.open(io.BytesIO(contents)).convert('RGB')
-            img = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            img = img.resize((224, 224), Image.Resampling.BILINEAR)
             
             img_array = np.array(img, dtype=np.float32) / 255.0
             img_batch = np.expand_dims(img_array, axis=0)
 
-            raw_preds = m.predict(img_batch, verbose=0)[0]
-            raw_preds = [float(p) for p in raw_preds]
-            
+            outputs = session.run([output_name], {input_name: img_batch})
+            raw_preds = outputs[0][0].tolist()
+
+            # Apply softmax normalization if needed
             if min(raw_preds) < 0 or sum(raw_preds) > 1.1 or sum(raw_preds) < 0.9:
                 exp_preds = np.exp(raw_preds - np.max(raw_preds))
                 raw_preds = (exp_preds / exp_preds.sum()).tolist()
@@ -150,10 +147,10 @@ async def predict(request: Request, file: UploadFile = File(None)):
                 "predicted_class": predicted_class,
                 "confidence": round(confidence, 4),
                 "probabilities": probabilities,
-                "model_source": "Trained Keras Model (diabetic_retinopathy_model.keras)"
+                "model_source": "ONNX Deep Learning Model (diabetic_retinopathy_model.onnx)"
             }
         except Exception as e:
-            print(f"Inference execution error: {e}")
+            print(f"Inference error: {e}")
             return get_fallback_prediction()
 
     return get_fallback_prediction()

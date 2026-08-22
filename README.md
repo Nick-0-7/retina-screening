@@ -343,3 +343,28 @@ Only a validated fundus image is allowed to proceed to the DR classification sta
                                        │ Explanation │
                                        └─────────────┘
 ```
+# 🛠️ Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| Python | Development |
+| TensorFlow / Keras | Deep Learning |
+| EfficientNetB0 | Image Classification |
+| NumPy | Numerical Processing |
+| Pandas | Dataset Analysis |
+| scikit-learn | Evaluation & Metrics |
+| Matplotlib | Visualization |
+| Pillow | Image Processing |
+
+## ⭐ Key Features
+
+- 🔍 Dedicated Fundus / Non-Fundus detection
+- 🧠 EfficientNetB0-based deep learning
+- 🩺 Five-stage diabetic retinopathy classification
+- 🎯 Dedicated focus on Moderate DR
+- 🧹 Duplicate and cross-class conflict analysis
+- 🔐 Leakage-conscious dataset preparation
+- 🔥 Grad-CAM explainability
+- 🚫 Non-fundus images rejected before DR classification
+- 📊 Class-wise performance evaluation
+- 🧩 Modular two-model architecture

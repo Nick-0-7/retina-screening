@@ -1,0 +1,12 @@
+# Exclude heavy dataset images, node_modules, and build artifacts from Vercel Serverless Function bundle
+archive/
+dr-vision-ai/
+node_modules/
+dist/
+.git/
+.gitignore
+*.md
+dataset/
+*.zip
+*.tar.gz
+*.csv

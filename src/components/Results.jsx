@@ -174,19 +174,19 @@ export default function Results({ predictionResult, selectedImage, onReset, onOp
                 </div>
 
                 {/* Stepper Track */}
-                <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {DR_STAGES.map((stage) => {
                     const isPredicted = stage.key === currentStage.key;
                     return (
                       <div
                         key={stage.key}
-                        className={`relative p-2.5 sm:p-3 rounded-2xl border text-center transition-all duration-300 ${
+                        className={`relative p-3 rounded-2xl border text-center transition-all duration-300 ${
                           isPredicted
-                            ? 'bg-gradient-to-b from-blue-600 to-teal-600 text-white border-blue-500 shadow-lg shadow-blue-500/25 scale-[1.05] z-10'
-                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 opacity-70'
+                            ? 'bg-gradient-to-b from-blue-600 to-teal-600 text-white border-blue-500 shadow-lg shadow-blue-500/25 scale-[1.02] sm:scale-[1.05] z-10'
+                            : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 opacity-75'
                         }`}
                       >
-                        <div className="text-[10px] font-bold uppercase tracking-wider mb-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider mb-0.5">
                           Grade {stage.grade}
                         </div>
                         <div className="text-xs font-extrabold truncate">
@@ -199,6 +199,7 @@ export default function Results({ predictionResult, selectedImage, onReset, onOp
                     );
                   })}
                 </div>
+
               </div>
 
               {/* PROBABILITY DISTRIBUTION (Animated Progress Bars) */}

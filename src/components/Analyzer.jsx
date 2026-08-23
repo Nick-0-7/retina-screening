@@ -181,7 +181,8 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
                   </div>
 
                   {/* Remove & Replace Buttons */}
-                  <div className="flex items-center space-x-3 pt-2">
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+
                     <button
                       onClick={handleRemoveImage}
                       className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-rose-500 text-rose-400 hover:text-rose-300 text-xs font-medium transition-colors"

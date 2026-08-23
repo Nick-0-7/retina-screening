@@ -1,157 +1,172 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 
-.bg-image{
-    height:100vh;
+/* Base Hero Container */
+.hero-section {
+  position: relative;
+  min-h-screen: 100vh;
+  overflow: hidden;
 }
 
-.eye-image{
-    height:700px;
-    width:1300px;
-    z-index: 0;
-    position: absolute;
-    margin-left:250px;
-    margin-bottom: 400px;
+.bg-image {
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 5rem;
+  padding-bottom: 3rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
-.hero-txt{
-    z-index: 1;
-    position: relative;
-    margin-left: 300px;
-    transform: translateY(200px);
-    font-family: 'Space Grotesk', sans-serif;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: white;
-  font-size: 40px;
+/* Background Eye Graphic */
+.eye-image {
+  height: 100%;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 700px;
+  object-fit: cover;
+  z-index: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.25;
+  filter: blur(1px);
 }
 
-.three{
-    display: flex;
-    gap: 30px;
-    z-index: 10;
-    position: relative;
-    margin-top: 50px;
-    margin-left: 100px;
-}
-
-.three img{
-    height: 160px;
-    width: 270px;
-    border: 3px solid white;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 16px;
-    position: relative;
-    z-index: 10;
-    margin-left: 300px;
-    margin-top: 230px;
-}
-
-/* Text fade-in */
+/* Hero Heading Text */
 .hero-txt {
-    z-index: 1;
-    position: relative;
-    margin-left: 300px;
-    transform: translateY(200px);
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    color: white;
-    font-size: 40px;
-
-    animation: fadeText 1.2s ease-out forwards;
+  z-index: 10;
+  position: relative;
+  margin-left: 0;
+  transform: none;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: white;
+  font-size: 2.25rem;
+  line-height: 1.2;
+  text-align: center;
+  margin-top: 2rem;
+  animation: fadeText 1.2s ease-out forwards;
 }
 
-/* Buttons fade-in */
+/* Action Buttons Container */
 .action-buttons {
-    display: flex;
-    gap: 16px;
-    position: relative;
-    z-index: 10;
-    margin-left: 300px;
-    margin-top: 230px;
-
-    opacity: 0;
-    animation: fadeButtons 1s ease-out 0.5s forwards;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+  z-index: 10;
+  margin-left: 0;
+  margin-top: 2rem;
+  width: 100%;
+  max-width: 420px;
+  opacity: 0;
+  animation: fadeButtons 1s ease-out 0.4s forwards;
 }
 
-/* Three images fade-in */
+/* Three Preview Images Container */
 .three {
-    display: flex;
-    gap: 30px;
-    z-index: 10;
-    position: relative;
-    margin-top: 50px;
-    margin-left: 100px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  z-index: 10;
+  position: relative;
+  margin-top: 3rem;
+  margin-left: 0;
+  width: 100%;
+  max-width: 900px;
 }
 
 .three img {
+  height: 110px;
+  width: 180px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 1rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  animation: fadeImages 1s ease-out forwards;
+}
+
+.three img:nth-child(1) { animation-delay: 0.6s; }
+.three img:nth-child(2) { animation-delay: 0.8s; }
+.three img:nth-child(3) { animation-delay: 1s; }
+
+/* Responsive Adjustments for Tablet & Desktop */
+@media (min-width: 640px) {
+  .hero-txt {
+    font-size: 3rem;
+    margin-top: 3rem;
+  }
+  .action-buttons {
+    flex-direction: row;
+    justify-content: center;
+    max-width: 100%;
+    margin-top: 2.5rem;
+  }
+  .three img {
+    height: 140px;
+    width: 230px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .eye-image {
+    opacity: 0.4;
+  }
+  .hero-txt {
+    font-size: 3.5rem;
+  }
+  .three img {
     height: 160px;
-    width: 270px;
-    border: 3px solid white;
-
-    opacity: 0;
-    animation: fadeImages 1s ease-out forwards;
+    width: 260px;
+  }
 }
 
-/* Different timing for each image */
-.three img:nth-child(1) {
-    animation-delay: 0.8s;
-}
-
-.three img:nth-child(2) {
-    animation-delay: 1s;
-}
-
-.three img:nth-child(3) {
-    animation-delay: 1.2s;
-}
-
-
-/* Animations */
-
+/* Keyframe Animations */
 @keyframes fadeText {
-    from {
-        opacity: 0;
-        transform: translateY(220px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(200px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fadeButtons {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fadeImages {
-    from {
-        opacity: 0;
-        transform: translateY(25px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.how-it-works{
-     background-image: url("../assets/howworks.jpg");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
+.how-it-works {
+  background-image: url("../assets/howworks.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }

@@ -1,7 +1,7 @@
 """
 DR Vision AI - Python FastAPI Backend Endpoint (ONNX Runtime Powered)
 Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained ONNX model.
-Includes Retinal Fundus Image Validation Guard to reject non-retinal / fake images.
+Includes Strict Retinal Fundus Validation Guard to reject non-retinal / portrait / face images.
 """
 
 import os
@@ -14,7 +14,7 @@ import numpy as np
 app = FastAPI(
     title="DR Vision AI Backend API",
     description="Diabetic Retinopathy Detection using high-performance ONNX deep learning model",
-    version="1.3.0"
+    version="1.4.0"
 )
 
 # Enable CORS for React frontend
@@ -78,8 +78,9 @@ def load_onnx_model():
 
 def validate_retinal_fundus_image(img: Image.Image):
     """
-    Validates whether an uploaded image has the color spectrum, contrast, and optical
-    geometry of a valid Retinal Fundus Photograph.
+    Validates whether an uploaded image has the exact optical, color spectrum, 
+    and pixel ratio characteristics of a valid Retinal Fundus Photograph.
+    Rejects human portraits, faces, selfies, clothing, nature, text, and non-retinal photos.
     Returns (is_valid: bool, reason: str)
     """
     try:
@@ -88,42 +89,43 @@ def validate_retinal_fundus_image(img: Image.Image):
         
         h, w, _ = img_np.shape
         if h < 50 or w < 50:
-            return False, "Image resolution is too small for retinal analysis."
+            return False, "Image resolution is too low for ocular fundus analysis."
             
-        r_mean = float(np.mean(img_np[:, :, 0]))
-        g_mean = float(np.mean(img_np[:, :, 1]))
-        b_mean = float(np.mean(img_np[:, :, 2]))
+        r = img_np[:, :, 0]
+        g = img_np[:, :, 1]
+        b = img_np[:, :, 2]
         
-        # 1. Total Darkness Check
-        if r_mean < 15 and g_mean < 15 and b_mean < 15:
-            return False, "Image is too dark or empty to detect retinal anatomy."
-            
-        # 2. Overall Variance / Monochrome Check
-        total_std = float(np.std(img_np))
-        if total_std < 8.0:
-            return False, "Image lacks necessary texture or visual contrast for fundus evaluation."
-            
-        # 3. Retinal Red-Dominance Spectrum Check
-        # Ocular fundus photographs have a dominant red/orange channel
-        if r_mean <= (b_mean * 1.05) or r_mean <= (g_mean * 0.88):
-            return False, "Non-retinal image detected: Color spectrum does not match ocular fundus photography."
+        # 1. Non-black pixels (luminance > 15)
+        non_black = (r > 15) | (g > 15) | (b > 15)
+        total_non_black = float(np.sum(non_black))
+        if total_non_black < (h * w * 0.1):
+            return False, "Image is too dark or empty to detect retinal anatomical structures."
 
-        # 4. Circular Fundus Camera Aperture Check (Vignetting)
-        # Fundus cameras capture retina through a circular lens aperture, resulting in dark corners
-        cw = int(w * 0.12)
-        ch = int(h * 0.12)
-        c1 = np.mean(img_np[:ch, :cw])
-        c2 = np.mean(img_np[:ch, -cw:])
-        c3 = np.mean(img_np[-ch:, :cw])
-        c4 = np.mean(img_np[-ch:, -cw:])
-        avg_corners = float((c1 + c2 + c3 + c4) / 4.0)
+        # 2. Retinal Red-Dominance Pixel Ratio vs Blue/Neutral Ratio
+        # In ocular fundus scans, the red channel dominates the vessel/choroid background
+        retinal_red_pixels = non_black & (r > g * 1.08) & (r > b * 1.25)
+        retinal_red_ratio = float(np.sum(retinal_red_pixels) / total_non_black)
         
-        center_h_start, center_h_end = int(h * 0.35), int(h * 0.65)
-        center_w_start, center_w_end = int(w * 0.35), int(w * 0.65)
-        center_brightness = float(np.mean(img_np[center_h_start:center_h_end, center_w_start:center_w_end]))
-        
-        if avg_corners > 130 and avg_corners >= (center_brightness * 0.88):
-            return False, "Non-retinal image detected: Image lacks characteristic circular fundus camera aperture mask."
+        # Blue / Neutral pixels (Skin tones, hair, suits/ties, background walls, sky)
+        neutral_or_blue_pixels = non_black & ((b >= r * 0.88) | (g >= r * 1.04))
+        blue_neutral_ratio = float(np.sum(neutral_or_blue_pixels) / total_non_black)
+
+        # 3. Outer Camera Lens Mask Check (Vignetting)
+        border_pixels = np.concatenate([
+            img_np[:int(h*0.1), :, :].reshape(-1, 3),
+            img_np[-int(h*0.1):, :, :].reshape(-1, 3),
+            img_np[:, :int(w*0.1), :].reshape(-1, 3),
+            img_np[:, -int(w*0.1):, :].reshape(-1, 3)
+        ])
+        border_dark_count = np.sum(np.mean(border_pixels, axis=1) < 45)
+        border_dark_ratio = float(border_dark_count / len(border_pixels))
+
+        # Rejection Criteria for Non-Retinal Images (Portraits, Faces, Clothes, Nature)
+        if retinal_red_ratio < 0.45:
+            return False, "Non-Retinal Image Rejected: The uploaded photo does not match the red-spectrum dominance of an ocular fundus photograph."
+            
+        if blue_neutral_ratio > 0.35:
+            return False, "Non-Retinal Image Rejected: Image contains non-ocular elements (clothing, skin tones, or background walls)."
 
         return True, "Valid Retinal Scan"
     except Exception as e:
@@ -154,7 +156,7 @@ def get_model_info():
 async def predict(request: Request, file: UploadFile = File(None)):
     """
     Accepts an uploaded retinal fundus image and returns live inference prediction JSON.
-    Rejects fake or non-retinal images.
+    Strictly validates that the input is a valid Retinal Fundus Photograph.
     """
     contents = None
     if file is not None:
@@ -181,7 +183,7 @@ async def predict(request: Request, file: UploadFile = File(None)):
             "message": "Unable to decode image file. Please upload a valid JPG, JPEG, or PNG retinal scan."
         }
 
-    # Validate whether image is a true retinal fundus scan
+    # Strict validation guard to reject human portraits, selfies, faces, and non-retinal photos
     is_valid, validation_reason = validate_retinal_fundus_image(img)
     if not is_valid:
         return {

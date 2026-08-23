@@ -39,11 +39,67 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // ── Client-side Retinal Fundus Validation ──────────────────────────────────
+  // Runs immediately before API call as an additional defense layer.
+  // Mirrors the server-side logic in api/predict.py.
+  const validateRetinalImageBeforeSubmit = (imageUrl) => {
+    return new Promise((resolve) => {
+      try {
+        const imgEl = new window.Image();
+        imgEl.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 100; canvas.height = 100;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(imgEl, 0, 0, 100, 100);
+          const d = ctx.getImageData(0, 0, 100, 100).data;
+
+          let total = 0, deepRed = 0, nonOcular = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], g = d[i + 1], b = d[i + 2];
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (lum > 15) {
+              total++;
+              if ((r - b) > 55 && (r - g) > 22 && r > 75) deepRed++;
+              if (lum > 100 && (r - b) < 50) nonOcular++;
+            }
+          }
+
+          if (total < 200) { resolve({ valid: false, reason: 'Image is too dark or empty.' }); return; }
+          const deepRedRatio = deepRed / total;
+          const nonOcularRatio = nonOcular / total;
+
+          if (deepRedRatio < 0.30 && nonOcularRatio > 0.25) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: The uploaded photo is not a retinal fundus scan (face, portrait, selfie, landscape, or clothing detected). Please upload a valid ocular fundus photograph.' });
+          } else if (deepRedRatio < 0.20) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks the deep red spectrum of an ocular fundus scan. Please upload a valid retinal photograph.' });
+          } else if (nonOcularRatio > 0.50) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image contains non-ocular elements (walls, clothing, skin tones). Please upload an ocular fundus scan.' });
+          } else {
+            resolve({ valid: true });
+          }
+        };
+        imgEl.onerror = () => resolve({ valid: true }); // let server handle corrupt files
+        imgEl.src = imageUrl;
+      } catch (e) {
+        resolve({ valid: true });
+      }
+    });
+  };
+
   // Handle Triggering Analysis
   const handleAnalyzeTrigger = async () => {
     if (!selectedImage) return;
 
     setErrorMsg(null);
+
+    // ── Second-layer client guard ─────────────────────────────────────────────
+    const validation = await validateRetinalImageBeforeSubmit(selectedImage.url);
+    if (!validation.valid) {
+      setErrorMsg(validation.reason);
+      setSelectedImage(null);
+      return;
+    }
+
     setIsProcessing(true);
 
     try {

@@ -1,7 +1,7 @@
 """
 DR Vision AI - Python FastAPI Backend Endpoint (ONNX Runtime Powered)
 Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained ONNX model.
-Includes Strict Retinal Fundus Validation Guard to reject non-retinal / portrait / face images.
+Includes Strict Retinal Fundus Validation Guard to reject human faces, portraits, selfies, clothing, and non-retinal photos.
 """
 
 import os
@@ -14,7 +14,7 @@ import numpy as np
 app = FastAPI(
     title="DR Vision AI Backend API",
     description="Diabetic Retinopathy Detection using high-performance ONNX deep learning model",
-    version="1.4.0"
+    version="1.5.0"
 )
 
 # Enable CORS for React frontend
@@ -80,7 +80,7 @@ def validate_retinal_fundus_image(img: Image.Image):
     """
     Validates whether an uploaded image has the exact optical, color spectrum, 
     and pixel ratio characteristics of a valid Retinal Fundus Photograph.
-    Rejects human portraits, faces, selfies, clothing, nature, text, and non-retinal photos.
+    Strictly rejects human portraits, faces, selfies, clothing, nature, text, and non-retinal photos.
     Returns (is_valid: bool, reason: str)
     """
     try:
@@ -95,37 +95,30 @@ def validate_retinal_fundus_image(img: Image.Image):
         g = img_np[:, :, 1]
         b = img_np[:, :, 2]
         
-        # 1. Non-black pixels (luminance > 15)
-        non_black = (r > 15) | (g > 15) | (b > 15)
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        non_black = luminance > 15
         total_non_black = float(np.sum(non_black))
+        
         if total_non_black < (h * w * 0.1):
             return False, "Image is too dark or empty to detect retinal anatomical structures."
 
-        # 2. Retinal Red-Dominance Pixel Ratio vs Blue/Neutral Ratio
-        # In ocular fundus scans, the red channel dominates the vessel/choroid background
-        retinal_red_pixels = non_black & (r > g * 1.08) & (r > b * 1.25)
-        retinal_red_ratio = float(np.sum(retinal_red_pixels) / total_non_black)
+        # 1. Deep Retinal Red Tissue Check
+        # Retinal tissue (choroid background, vessels, macula) is deep blood red/orange (R - B > 50 and R - G > 20).
+        # Human skin tones, faces, suits, clothes, and walls have R - B < 45.
+        deep_retinal_red = non_black & ((r - b) > 50) & ((r - g) > 20) & (r > 70)
+        deep_retinal_red_ratio = float(np.sum(deep_retinal_red) / total_non_black)
         
-        # Blue / Neutral pixels (Skin tones, hair, suits/ties, background walls, sky)
-        neutral_or_blue_pixels = non_black & ((b >= r * 0.88) | (g >= r * 1.04))
-        blue_neutral_ratio = float(np.sum(neutral_or_blue_pixels) / total_non_black)
+        # 2. Light Wall / Shirt / Face Skin Background Check
+        # Human faces, background walls, white shirts, suits have high luminance with low R-B separation.
+        light_bg_or_skin = non_black & (luminance > 110) & ((r - b) < 48)
+        light_bg_ratio = float(np.sum(light_bg_or_skin) / total_non_black)
 
-        # 3. Outer Camera Lens Mask Check (Vignetting)
-        border_pixels = np.concatenate([
-            img_np[:int(h*0.1), :, :].reshape(-1, 3),
-            img_np[-int(h*0.1):, :, :].reshape(-1, 3),
-            img_np[:, :int(w*0.1), :].reshape(-1, 3),
-            img_np[:, -int(w*0.1):, :].reshape(-1, 3)
-        ])
-        border_dark_count = np.sum(np.mean(border_pixels, axis=1) < 45)
-        border_dark_ratio = float(border_dark_count / len(border_pixels))
+        # Rejection Rules for Non-Retinal Images (Portraits, Faces, Clothes, Nature, Memes)
+        if deep_retinal_red_ratio < 0.40:
+            return False, "Non-Retinal Image Rejected: The uploaded photo lacks deep ocular fundus red saturation (e.g. human face, portrait, selfie, or general photo detected)."
 
-        # Rejection Criteria for Non-Retinal Images (Portraits, Faces, Clothes, Nature)
-        if retinal_red_ratio < 0.45:
-            return False, "Non-Retinal Image Rejected: The uploaded photo does not match the red-spectrum dominance of an ocular fundus photograph."
-            
-        if blue_neutral_ratio > 0.35:
-            return False, "Non-Retinal Image Rejected: Image contains non-ocular elements (clothing, skin tones, or background walls)."
+        if light_bg_ratio > 0.20:
+            return False, "Non-Retinal Image Rejected: Image contains non-ocular elements like light background walls, clothing, or skin tones."
 
         return True, "Valid Retinal Scan"
     except Exception as e:

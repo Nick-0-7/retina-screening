@@ -61,45 +61,46 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
       const imgData = ctx.getImageData(0, 0, 100, 100).data;
       
       let nonBlackCount = 0;
-      let retinalRedCount = 0;
-      let blueNeutralCount = 0;
+      let deepRetinalRedCount = 0;
+      let lightBgOrSkinCount = 0;
 
       for (let i = 0; i < imgData.length; i += 4) {
         const r = imgData[i];
         const g = imgData[i + 1];
         const b = imgData[i + 2];
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 
-        if (r > 15 || g > 15 || b > 15) {
+        if (luminance > 15) {
           nonBlackCount++;
           
-          if (r > g * 1.08 && r > b * 1.25) {
-            retinalRedCount++;
+          if ((r - b) > 50 && (r - g) > 20 && r > 70) {
+            deepRetinalRedCount++;
           }
           
-          if (b >= r * 0.88 || g >= r * 1.04) {
-            blueNeutralCount++;
+          if (luminance > 110 && (r - b) < 48) {
+            lightBgOrSkinCount++;
           }
         }
       }
       
       if (nonBlackCount < 500) {
-        return { isValid: false, reason: 'Invalid Image: Selected image is too dark or empty to analyze.' };
+        return { isValid: false, reason: 'Invalid Image: Selected file is too dark or empty to analyze.' };
       }
 
-      const retinalRedRatio = retinalRedCount / nonBlackCount;
-      const blueNeutralRatio = blueNeutralCount / nonBlackCount;
+      const deepRedRatio = deepRetinalRedCount / nonBlackCount;
+      const lightBgRatio = lightBgOrSkinCount / nonBlackCount;
 
-      if (retinalRedRatio < 0.45) {
+      if (deepRedRatio < 0.40) {
         return {
           isValid: false,
-          reason: 'Non-Retinal Image Rejected: The selected photo does not match the ocular red spectrum of a fundus scan (e.g. human face, portrait, selfie, or clothing detected). Please upload a valid retinal scan.'
+          reason: 'Non-Retinal Image Rejected: The selected photo lacks deep ocular fundus red saturation (human face, portrait, selfie, or general photo detected). Please upload a valid retinal scan.'
         };
       }
 
-      if (blueNeutralRatio > 0.35) {
+      if (lightBgRatio > 0.20) {
         return {
           isValid: false,
-          reason: 'Non-Retinal Image Rejected: Image contains non-ocular elements (clothing, hair, skin tones, or background walls). Please select an ocular fundus scan.'
+          reason: 'Non-Retinal Image Rejected: Image contains non-ocular elements like light background walls, clothing, or skin tones. Please select an ocular fundus scan.'
         };
       }
 
@@ -108,6 +109,7 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
       return { isValid: true, reason: null };
     }
   };
+
 
 
 

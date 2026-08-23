@@ -60,7 +60,11 @@ export async function analyzeRetinalImage(imageInput) {
     }
 
     const data = await response.json();
+    if (data.is_valid === false || data.error === 'NON_RETINAL_IMAGE') {
+      throw new Error(data.message || 'Non-retinal image detected: The uploaded file does not match the color spectrum or circular field-of-view of an ocular fundus photograph.');
+    }
     return normalizeResponse(data);
+
   } catch (err) {
     clearTimeout(timeoutId);
     console.error('Backend API error:', err);

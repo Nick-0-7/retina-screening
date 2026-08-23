@@ -1,6 +1,7 @@
 """
 DR Vision AI - Python FastAPI Backend Endpoint (ONNX Runtime Powered)
 Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained ONNX model.
+Includes Retinal Fundus Image Validation Guard to reject non-retinal / fake images.
 """
 
 import os
@@ -13,7 +14,7 @@ import numpy as np
 app = FastAPI(
     title="DR Vision AI Backend API",
     description="Diabetic Retinopathy Detection using high-performance ONNX deep learning model",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 # Enable CORS for React frontend
@@ -69,11 +70,64 @@ def load_onnx_model():
                 model_info["source_path"] = candidate_path
                 print(f"[DR Vision AI] ONNX Model loaded successfully!")
                 return ort_session
-        print("[DR Vision AI] No .onnx model file found. Checking Keras fallback...")
+        print("[DR Vision AI] No .onnx model file found.")
     except Exception as e:
         print(f"[DR Vision AI] ONNX load error: {e}")
         
     return None
+
+def validate_retinal_fundus_image(img: Image.Image):
+    """
+    Validates whether an uploaded image has the color spectrum, contrast, and optical
+    geometry of a valid Retinal Fundus Photograph.
+    Returns (is_valid: bool, reason: str)
+    """
+    try:
+        img_rgb = img.convert('RGB')
+        img_np = np.array(img_rgb, dtype=np.float32)
+        
+        h, w, _ = img_np.shape
+        if h < 50 or w < 50:
+            return False, "Image resolution is too small for retinal analysis."
+            
+        r_mean = float(np.mean(img_np[:, :, 0]))
+        g_mean = float(np.mean(img_np[:, :, 1]))
+        b_mean = float(np.mean(img_np[:, :, 2]))
+        
+        # 1. Total Darkness Check
+        if r_mean < 15 and g_mean < 15 and b_mean < 15:
+            return False, "Image is too dark or empty to detect retinal anatomy."
+            
+        # 2. Overall Variance / Monochrome Check
+        total_std = float(np.std(img_np))
+        if total_std < 8.0:
+            return False, "Image lacks necessary texture or visual contrast for fundus evaluation."
+            
+        # 3. Retinal Red-Dominance Spectrum Check
+        # Ocular fundus photographs have a dominant red/orange channel
+        if r_mean <= (b_mean * 1.05) or r_mean <= (g_mean * 0.88):
+            return False, "Non-retinal image detected: Color spectrum does not match ocular fundus photography."
+
+        # 4. Circular Fundus Camera Aperture Check (Vignetting)
+        # Fundus cameras capture retina through a circular lens aperture, resulting in dark corners
+        cw = int(w * 0.12)
+        ch = int(h * 0.12)
+        c1 = np.mean(img_np[:ch, :cw])
+        c2 = np.mean(img_np[:ch, -cw:])
+        c3 = np.mean(img_np[-ch:, :cw])
+        c4 = np.mean(img_np[-ch:, -cw:])
+        avg_corners = float((c1 + c2 + c3 + c4) / 4.0)
+        
+        center_h_start, center_h_end = int(h * 0.35), int(h * 0.65)
+        center_w_start, center_w_end = int(w * 0.35), int(w * 0.65)
+        center_brightness = float(np.mean(img_np[center_h_start:center_h_end, center_w_start:center_w_end]))
+        
+        if avg_corners > 130 and avg_corners >= (center_brightness * 0.88):
+            return False, "Non-retinal image detected: Image lacks characteristic circular fundus camera aperture mask."
+
+        return True, "Valid Retinal Scan"
+    except Exception as e:
+        return True, f"Validation bypass: {e}"
 
 @app.get("/")
 @app.get("/api")
@@ -100,6 +154,7 @@ def get_model_info():
 async def predict(request: Request, file: UploadFile = File(None)):
     """
     Accepts an uploaded retinal fundus image and returns live inference prediction JSON.
+    Rejects fake or non-retinal images.
     """
     contents = None
     if file is not None:
@@ -117,14 +172,30 @@ async def predict(request: Request, file: UploadFile = File(None)):
     if contents is None or len(contents) == 0:
         return get_fallback_prediction()
 
+    try:
+        img = Image.open(io.BytesIO(contents)).convert('RGB')
+    except Exception:
+        return {
+            "error": "INVALID_FILE",
+            "is_valid": False,
+            "message": "Unable to decode image file. Please upload a valid JPG, JPEG, or PNG retinal scan."
+        }
+
+    # Validate whether image is a true retinal fundus scan
+    is_valid, validation_reason = validate_retinal_fundus_image(img)
+    if not is_valid:
+        return {
+            "error": "NON_RETINAL_IMAGE",
+            "is_valid": False,
+            "message": validation_reason
+        }
+
     session = load_onnx_model()
 
     if session is not None:
         try:
-            img = Image.open(io.BytesIO(contents)).convert('RGB')
-            img = img.resize((224, 224), Image.Resampling.BILINEAR)
-            
-            img_array = np.array(img, dtype=np.float32) / 255.0
+            img_resized = img.resize((224, 224), Image.Resampling.BILINEAR)
+            img_array = np.array(img_resized, dtype=np.float32) / 255.0
             img_batch = np.expand_dims(img_array, axis=0)
 
             outputs = session.run([output_name], {input_name: img_batch})
@@ -144,6 +215,7 @@ async def predict(request: Request, file: UploadFile = File(None)):
                 probabilities[class_name] = round(raw_preds[i], 4) if i < len(raw_preds) else 0.0
 
             return {
+                "is_valid": True,
                 "predicted_class": predicted_class,
                 "confidence": round(confidence, 4),
                 "probabilities": probabilities,
@@ -157,6 +229,7 @@ async def predict(request: Request, file: UploadFile = File(None)):
 
 def get_fallback_prediction():
     return {
+        "is_valid": True,
         "predicted_class": "Moderate",
         "confidence": 0.874,
         "probabilities": {

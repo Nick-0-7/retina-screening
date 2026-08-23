@@ -29,16 +29,68 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
 
     const reader = new FileReader();
     reader.onload = () => {
-      setSelectedImage({
-        file: file,
-        url: reader.result,
-        name: file.name,
-        size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-        type: file.type
-      });
+      const img = new Image();
+      img.onload = () => {
+        const validation = checkRetinalSpectrum(img);
+        if (!validation.isValid) {
+          setErrorMsg(validation.reason);
+          setSelectedImage(null);
+          return;
+        }
+
+        setSelectedImage({
+          file: file,
+          url: reader.result,
+          name: file.name,
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          type: file.type
+        });
+      };
+      img.src = reader.result;
     };
     reader.readAsDataURL(file);
   };
+
+  const checkRetinalSpectrum = (imgElement) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(imgElement, 0, 0, 100, 100);
+      const imgData = ctx.getImageData(0, 0, 100, 100).data;
+      
+      let totalR = 0, totalG = 0, totalB = 0;
+      const pixelCount = 100 * 100;
+      
+      for (let i = 0; i < imgData.length; i += 4) {
+        totalR += imgData[i];
+        totalG += imgData[i + 1];
+        totalB += imgData[i + 2];
+      }
+      
+      const avgR = totalR / pixelCount;
+      const avgG = totalG / pixelCount;
+      const avgB = totalB / pixelCount;
+
+      if (avgR < 15 && avgG < 15 && avgB < 15) {
+        return { isValid: false, reason: 'Invalid Image: Selected image is too dark or empty to analyze.' };
+      }
+
+      // Ocular fundus scans require dominant Red spectrum
+      if (avgR <= (avgB * 1.05) || avgR <= (avgG * 0.88)) {
+        return {
+          isValid: false,
+          reason: 'Non-Retinal Image Rejected: The selected image does not match the color spectrum or circular field-of-view of a valid retinal fundus scan. Please upload a clear ocular fundus photograph.'
+        };
+      }
+
+      return { isValid: true, reason: null };
+    } catch (e) {
+      return { isValid: true, reason: null };
+    }
+  };
+
 
   // Drag & drop handlers
   const handleDragOver = (e) => {

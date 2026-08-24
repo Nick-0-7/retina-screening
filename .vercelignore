@@ -1,4 +1,6 @@
-# Exclude heavy dataset images, node_modules, and build artifacts from Vercel Serverless Function bundle
+# ── Exclude from Vercel Serverless Function bundle ────────────────────────────
+
+# Dev/build artifacts (not needed at runtime)
 archive/
 dr-vision-ai/
 node_modules/
@@ -6,7 +8,32 @@ dist/
 .git/
 .gitignore
 *.md
+
+# Large data files
 dataset/
+data/
 *.zip
 *.tar.gz
 *.csv
+
+# ML model training artifacts (only .onnx files in backend/model/ are used)
+*.keras
+*.h5
+*.hdf5
+*.pth
+*.pt
+*.ckpt
+diabetic_retinopathy_model.keras/
+
+# Test & dev scripts (not needed on Vercel)
+test_live_api.py
+dr-training/
+
+# Source files not needed server-side
+src/
+public/
+index.html
+vite.config.js
+package.json
+package-lock.json
+.oxlintrc.json

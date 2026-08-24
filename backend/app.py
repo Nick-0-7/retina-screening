@@ -52,51 +52,81 @@ def _load():
 
 def _validate(img: Image.Image):
     """
-    Rejects non-retinal photos (faces, portraits, landscapes, clothing, documents).
+    Rejects non-retinal photos using a 4-signal physics-based approach.
     Returns (is_valid: bool, reason: str).
 
-    Physics of fundus photography:
-      - Retinal tissue is DEEP BLOOD RED: R - B > 55, R - G > 22, R > 75
-      - Human faces / walls / clothing are LIGHT NEUTRAL: lum > 100 and R-B < 50
+    Key signals:
+      1. darkBorderRatio   — Real fundus always has a large dark circular border
+      2. deepFundusRed     — Actual retinal tissue: DARK + highly red (lum < 110)
+      3. skinTone          — Faces/portraits: BRIGHT + mildly reddish (lum 90-235)
+      4. brightNeutral     — Backgrounds, walls, clothing, sky
+
+    The critical fix: skin tones satisfy old "deep red" criteria (R-B≈70) because
+    they ARE reddish — but they're BRIGHT. Real blood-red fundus tissue is DARK.
+    Adding the lum < 110 constraint to deepFundusRed cleanly separates them.
     """
     try:
-        a = np.array(img.convert("RGB").resize((200, 200)), dtype=np.float32)
-        r, g, b = a[:,:,0], a[:,:,1], a[:,:,2]
-        lum = 0.299*r + 0.587*g + 0.114*b
+        SIZE = 160
+        a = np.array(img.convert("RGB").resize((SIZE, SIZE)), dtype=np.float32)
+        r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        total_pixels = float(SIZE * SIZE)
 
-        mask = lum > 15
-        total = float(mask.sum())
-        if total < (200*200*0.08):
+        dark_mask   = lum < 18
+        dark_border = float(dark_mask.sum())
+        lit         = total_pixels - dark_border
+
+        if lit < total_pixels * 0.05:
             return False, "Image is too dark or empty for retinal analysis."
 
-        deep_red   = mask & ((r-b) > 55) & ((r-g) > 22) & (r > 75)
-        non_ocular = mask & (lum > 100) & ((r-b) < 50)
+        dark_border_ratio = dark_border / total_pixels
 
-        dr_ratio  = float(deep_red.sum() / total)
-        noc_ratio = float(non_ocular.sum() / total)
+        # Signal 1 — deep retinal blood red: DARK + high red dominance
+        deep_red_mask = (~dark_mask) & (r > 55) & ((r - b) > 35) & ((r - g) > 12) & (lum < 110)
+        # Signal 2 — skin tone: BRIGHT + mildly reddish (face, portraits, hands)
+        skin_mask = (~dark_mask) & (lum > 90) & (lum < 235) & ((r - b) > 15) & ((r - b) < 110) & (r > 90) & ((r - g) < 65)
+        # Signal 3 — bright near-neutral: walls, backgrounds, clothing, sky
+        bright_mask = (~dark_mask) & (lum > 140) & (np.abs(r - g) < 25) & (np.abs(g - b) < 25)
 
-        print(f"[Validation] deep_red={dr_ratio:.3f}  non_ocular={noc_ratio:.3f}")
+        deep_red_ratio     = float(deep_red_mask.sum()) / lit if lit > 0 else 0
+        skin_ratio         = float(skin_mask.sum())     / lit if lit > 0 else 0
+        bright_neutral_ratio = float(bright_mask.sum()) / lit if lit > 0 else 0
 
-        if dr_ratio < 0.30 and noc_ratio > 0.25:
+        print(f"[Validation] dark_border={dark_border_ratio:.3f}  deep_red={deep_red_ratio:.3f}  skin={skin_ratio:.3f}  bright_neutral={bright_neutral_ratio:.3f}")
+
+        # ── Rule 1: Face / Portrait / Selfie ─────────────────────────────────
+        if skin_ratio > 0.22 and dark_border_ratio < 0.25:
             return False, (
-                "Non-Retinal Image Rejected: The uploaded photo is not a retinal fundus scan "
-                "(face, portrait, selfie, landscape, or clothing detected). "
-                "Please upload a clear ocular fundus photograph."
+                "Non-Retinal Image Rejected: A human face, portrait, or selfie was detected. "
+                "Please upload a genuine retinal fundus photograph taken by an ophthalmoscope."
             )
-        if dr_ratio < 0.20:
+
+        # ── Rule 2: Landscape / Document / Clothing ───────────────────────────
+        if dark_border_ratio < 0.12 and bright_neutral_ratio > 0.35:
             return False, (
-                "Non-Retinal Image Rejected: Image lacks the deep blood-red spectrum of an "
-                "ocular fundus photograph. Please upload a valid retinal scan."
+                "Non-Retinal Image Rejected: Image appears to be a landscape, document, or object. "
+                "Please upload a valid ocular fundus scan."
             )
-        if noc_ratio > 0.50:
+
+        # ── Rule 3: No fundus border AND no retinal red ───────────────────────
+        if dark_border_ratio < 0.12 and deep_red_ratio < 0.20:
             return False, (
-                "Non-Retinal Image Rejected: Image contains non-ocular elements such as "
-                "light background walls, clothing, or skin tones."
+                "Non-Retinal Image Rejected: Image lacks both the dark circular border and "
+                "the blood-red spectrum of a genuine ocular fundus photograph."
             )
+
+        # ── Rule 4: Insufficient deep retinal red ─────────────────────────────
+        if deep_red_ratio < 0.18 and dark_border_ratio < 0.20:
+            return False, (
+                "Non-Retinal Image Rejected: Image lacks the deep ocular blood-red spectrum "
+                "of a retinal fundus photograph. Please upload a valid retinal scan."
+            )
+
         return True, "OK"
     except Exception as e:
         print(f"[Validation] Error: {e}")
         return True, "Skipped"
+
 
 
 @app.get("/")

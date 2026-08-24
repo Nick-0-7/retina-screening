@@ -10,6 +10,7 @@ import Disclaimer from './components/Disclaimer';
 import ReportModal from './components/ReportModal';
 import Footer from './components/Footer';
 import { analyzeRetinalImage } from './services/api';
+import { LanguageProvider } from './context/LanguageContext';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -39,44 +40,84 @@ export default function App() {
     }
   }, [darkMode]);
 
+
   // ── Client-side Retinal Fundus Validation ──────────────────────────────────
-  // Runs immediately before API call as an additional defense layer.
-  // Mirrors the server-side logic in api/predict.py.
+  // Physics-based 4-signal detector. Key insight:
+  //   • Real fundus tissue  → DARK blood-red  (lum < 110, R-B > 40)
+  //   • Skin / face tones   → BRIGHT reddish  (lum 100-230, R-B 20-100)
+  //   • Real fundus images  → large dark circular BORDER (>15% truly-black pixels)
+  //   • Non-fundus images   → almost no black pixels
   const validateRetinalImageBeforeSubmit = (imageUrl) => {
     return new Promise((resolve) => {
       try {
         const imgEl = new window.Image();
         imgEl.onload = () => {
+          const SIZE = 160;
           const canvas = document.createElement('canvas');
-          canvas.width = 100; canvas.height = 100;
+          canvas.width = SIZE; canvas.height = SIZE;
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(imgEl, 0, 0, 100, 100);
-          const d = ctx.getImageData(0, 0, 100, 100).data;
+          ctx.drawImage(imgEl, 0, 0, SIZE, SIZE);
+          const d = ctx.getImageData(0, 0, SIZE, SIZE).data;
+          const totalPixels = SIZE * SIZE;
 
-          let total = 0, deepRed = 0, nonOcular = 0;
+          let darkBorder = 0;    // truly black pixels  (fundus circular border)
+          let deepFundusRed = 0; // dark blood-red      (actual retinal tissue)
+          let skinTone = 0;      // bright reddish      (face / skin)
+          let brightNeutral = 0; // bright near-neutral (walls, clothing, sky)
+          let lit = 0;           // non-black pixels
+
           for (let i = 0; i < d.length; i += 4) {
             const r = d[i], g = d[i + 1], b = d[i + 2];
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (lum > 15) {
-              total++;
-              if ((r - b) > 55 && (r - g) > 22 && r > 75) deepRed++;
-              if (lum > 100 && (r - b) < 50) nonOcular++;
+
+            if (lum < 18) {
+              darkBorder++;         // part of the dark fundus border
+            } else {
+              lit++;
+              // Deep retinal blood red: DARK + high red dominance
+              if (r > 55 && (r - b) > 35 && (r - g) > 12 && lum < 110) deepFundusRed++;
+              // Skin tone: BRIGHT + mildly reddish (faces, portraits, hands)
+              if (lum > 90 && lum < 235 && (r - b) > 15 && (r - b) < 110 && r > 90 && (r - g) < 65) skinTone++;
+              // Bright neutral: backgrounds, walls, clothing, sky
+              if (lum > 140 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25) brightNeutral++;
             }
           }
 
-          if (total < 200) { resolve({ valid: false, reason: 'Image is too dark or empty.' }); return; }
-          const deepRedRatio = deepRed / total;
-          const nonOcularRatio = nonOcular / total;
+          const darkBorderRatio    = darkBorder   / totalPixels;
+          const deepFundusRedRatio = lit > 0 ? deepFundusRed / lit : 0;
+          const skinRatio          = lit > 0 ? skinTone      / lit : 0;
+          const brightNeutralRatio = lit > 0 ? brightNeutral / lit : 0;
 
-          if (deepRedRatio < 0.30 && nonOcularRatio > 0.25) {
-            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: The uploaded photo is not a retinal fundus scan (face, portrait, selfie, landscape, or clothing detected). Please upload a valid ocular fundus photograph.' });
-          } else if (deepRedRatio < 0.20) {
-            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks the deep red spectrum of an ocular fundus scan. Please upload a valid retinal photograph.' });
-          } else if (nonOcularRatio > 0.50) {
-            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image contains non-ocular elements (walls, clothing, skin tones). Please upload an ocular fundus scan.' });
-          } else {
-            resolve({ valid: true });
+          console.log(`[Validation] dark=${darkBorderRatio.toFixed(3)} fundusRed=${deepFundusRedRatio.toFixed(3)} skin=${skinRatio.toFixed(3)} brightNeutral=${brightNeutralRatio.toFixed(3)}`);
+
+          // ── Rule 1: Face / Portrait / Selfie ─────────────────────────────
+          // Skin pixels are abundant AND there's no proper black fundus border
+          if (skinRatio > 0.22 && darkBorderRatio < 0.25) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: A human face, portrait, or selfie was detected. Please upload a genuine retinal fundus photograph taken by an ophthalmoscope.' });
+            return;
           }
+
+          // ── Rule 2: Bright non-ocular scene (landscape, doc, clothing) ───
+          // No dark border + mostly bright neutral scene
+          if (darkBorderRatio < 0.12 && brightNeutralRatio > 0.35) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image appears to be a landscape, document, or object photo. Please upload a valid ocular fundus scan.' });
+            return;
+          }
+
+          // ── Rule 3: Missing fundus border with no retinal red ────────────
+          // Real fundus ALWAYS has a dark circular border
+          if (darkBorderRatio < 0.12 && deepFundusRedRatio < 0.20) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks both the dark circular border and the blood-red spectrum of a genuine fundus scan.' });
+            return;
+          }
+
+          // ── Rule 4: Insufficient deep retinal red ────────────────────────
+          if (deepFundusRedRatio < 0.18 && darkBorderRatio < 0.20) {
+            resolve({ valid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks the deep ocular blood-red spectrum of a retinal fundus photograph.' });
+            return;
+          }
+
+          resolve({ valid: true });
         };
         imgEl.onerror = () => resolve({ valid: true }); // let server handle corrupt files
         imgEl.src = imageUrl;
@@ -85,6 +126,7 @@ export default function App() {
       }
     });
   };
+
 
   // Handle Triggering Analysis
   const handleAnalyzeTrigger = async () => {
@@ -143,76 +185,77 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
-      
-      {/* Sticky Header Navigation */}
-      <Navbar
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
-        activeTab={activeTab}
-        setActiveTab={handleNavigate}
+    <LanguageProvider>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
 
-        className="navigation"
-      />
-
-      {/* Main Page Layout */}
-      <main>
-        {/* 1. Hero Section */}
-        <Hero
-          onAnalyzeClick={() => handleNavigate('analyze')}
-          onHowItWorksClick={() => handleNavigate('how-it-works')}
-          className="main-hero"
+        {/* Sticky Header Navigation */}
+        <Navbar
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          activeTab={activeTab}
+          setActiveTab={handleNavigate}
+          className="navigation"
         />
 
-        {/* 2. How It Works Section */}
-        <HowItWorks
-          onStartUpload={() => handleNavigate('analyze')}
-        />
-
-        {/* 3. AI Analysis Upload Card */}
-        <Analyzer
-          selectedImage={selectedImage}
-          setSelectedImage={setSelectedImage}
-          onAnalyzeTrigger={handleAnalyzeTrigger}
-          isProcessing={isProcessing}
-          errorMsg={errorMsg}
-          setErrorMsg={setErrorMsg}
-        />
-
-        {/* 4. AI Scanning Loading Animation Overlay */}
-        <ScanningModal
-          isOpen={isProcessing}
-          imagePreview={selectedImage?.url}
-        />
-
-        {/* 5. Clinical Diagnostic Results Dashboard */}
-        {predictionResult && (
-          <Results
-            predictionResult={predictionResult}
-            selectedImage={selectedImage}
-            onReset={handleReset}
-            onOpenReport={() => setShowReport(true)}
+        {/* Main Page Layout */}
+        <main>
+          {/* 1. Hero Section */}
+          <Hero
+            onAnalyzeClick={() => handleNavigate('analyze')}
+            onHowItWorksClick={() => handleNavigate('how-it-works')}
+            className="main-hero"
           />
-        )}
 
-        {/* 6. Model Architecture Specifications */}
-        <ModelSpecs />
+          {/* 2. How It Works Section */}
+          <HowItWorks
+            onStartUpload={() => handleNavigate('analyze')}
+          />
 
-        {/* 7. Medical Legal Disclaimer Notice */}
-        <Disclaimer />
-      </main>
+          {/* 3. AI Analysis Upload Card */}
+          <Analyzer
+            selectedImage={selectedImage}
+            setSelectedImage={setSelectedImage}
+            onAnalyzeTrigger={handleAnalyzeTrigger}
+            isProcessing={isProcessing}
+            errorMsg={errorMsg}
+            setErrorMsg={setErrorMsg}
+          />
 
-      {/* 8. Export Medical Evaluation Report Modal */}
-      <ReportModal
-        isOpen={showReport}
-        onClose={() => setShowReport(false)}
-        predictionResult={predictionResult}
-        selectedImage={selectedImage}
-      />
+          {/* 4. AI Scanning Loading Animation Overlay */}
+          <ScanningModal
+            isOpen={isProcessing}
+            imagePreview={selectedImage?.url}
+          />
 
-      {/* 9. Page Footer */}
-      <Footer onNavigate={handleNavigate} />
+          {/* 5. Clinical Diagnostic Results Dashboard */}
+          {predictionResult && (
+            <Results
+              predictionResult={predictionResult}
+              selectedImage={selectedImage}
+              onReset={handleReset}
+              onOpenReport={() => setShowReport(true)}
+            />
+          )}
 
-    </div>
+          {/* 6. Model Architecture Specifications */}
+          <ModelSpecs />
+
+          {/* 7. Medical Legal Disclaimer Notice */}
+          <Disclaimer />
+        </main>
+
+        {/* 8. Export Medical Evaluation Report Modal */}
+        <ReportModal
+          isOpen={showReport}
+          onClose={() => setShowReport(false)}
+          predictionResult={predictionResult}
+          selectedImage={selectedImage}
+        />
+
+        {/* 9. Page Footer */}
+        <Footer onNavigate={handleNavigate} />
+
+      </div>
+    </LanguageProvider>
   );
 }

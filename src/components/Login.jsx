@@ -165,7 +165,7 @@ export default function Login({ onBack, onLoginSuccess }) {
                 onChange={handleChange}
                 placeholder="e.g. MMC-123456"
                 required
-                className="w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition"
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition text-slate-900 placeholder:text-slate-500 font-medium"
               />
             </div>
 
@@ -180,7 +180,7 @@ export default function Login({ onBack, onLoginSuccess }) {
                 value={formData.council}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition text-slate-700"
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition text-slate-900 font-medium"
               >
                 <option value="">Select Medical Council</option>
                 <option value="Maharashtra Medical Council">
@@ -208,7 +208,7 @@ export default function Login({ onBack, onLoginSuccess }) {
                 onChange={handleChange}
                 placeholder="doctor@hospital.com"
                 required
-                className="w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition"
+                className="w-full px-4 py-3.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition text-slate-900 placeholder:text-slate-500 font-medium"
               />
             </div>
 
@@ -226,7 +226,7 @@ export default function Login({ onBack, onLoginSuccess }) {
                   onChange={handleChange}
                   placeholder="Enter your password"
                   required
-                  className="w-full px-4 py-3.5 pr-12 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition"
+                  className="w-full px-4 py-3.5 pr-12 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100 outline-none transition text-slate-900 placeholder:text-slate-500 font-medium"
                 />
 
                 <button

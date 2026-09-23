@@ -14,10 +14,10 @@ export default function ModelSpecs() {
             <span>Deep Learning Architecture</span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            EfficientNetB0 Model Specifications
+            DenseNet Model Specifications
           </h2>
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400">
-            Engineered with compound scaling for optimal feature extraction, high accuracy, and low inference latency.
+            Engineered with dense connectivity for optimal feature reuse, gradient flow, and high accuracy.
           </p>
         </div>
 
@@ -30,10 +30,10 @@ export default function ModelSpecs() {
               <Cpu className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div className="text-2xl font-black text-slate-900 dark:text-white">
-              EfficientNetB0
+              DenseNet
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Compound Scaling (Depth, Width, Resolution)
+              Densely Connected Convolutional Networks
             </p>
           </div>
 

@@ -205,7 +205,7 @@ export default function Results({ predictionResult, selectedImage, onReset, onOp
               <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                   <span>Probability Distribution</span>
-                  <span className="text-slate-400 font-mono">EfficientNetB0 Softmax</span>
+                  <span className="text-slate-400 font-mono">DenseNet Softmax</span>
                 </div>
 
                 <div className="space-y-3">

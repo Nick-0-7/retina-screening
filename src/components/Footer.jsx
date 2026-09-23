@@ -20,7 +20,7 @@ export default function Footer({ onNavigate }) {
             </div>
             
             <p className="text-xs text-slate-400 leading-relaxed max-w-md">
-              A modern healthcare AI web application powered by EfficientNetB0 deep learning for Diabetic Retinopathy detection and severity classification.
+              A modern healthcare AI web application powered by DenseNet deep learning for Diabetic Retinopathy detection and severity classification.
             </p>
           </div>
 
@@ -55,7 +55,7 @@ export default function Footer({ onNavigate }) {
           <div className="md:col-span-4 space-y-3 text-left">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-200">System Specs & API</div>
             <div className="space-y-2 text-xs font-mono">
-              <div className="text-slate-300">Architecture: EfficientNetB0</div>
+              <div className="text-slate-300">Architecture: DenseNet</div>
               <div className="text-slate-300">Input Spec: 224 × 224 × 3 RGB</div>
               <div className="text-teal-400">Endpoint: POST /predict</div>
               <div className="text-slate-400">Classes: 5 (Grade 0 to Grade 4)</div>

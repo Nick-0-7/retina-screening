@@ -193,7 +193,7 @@ async def predict(request: Request, file: UploadFile = File(None)):
                 "predicted_class": CLASSES[idx] if idx < len(CLASSES) else f"Class_{idx}",
                 "confidence": round(float(raw[idx]), 4),
                 "probabilities": {CLASSES[i]: round(raw[i], 4) for i in range(len(CLASSES))},
-                "model_source": "ONNX EfficientNetB0 (diabetic_retinopathy_model.onnx)",
+                "model_source": "ONNX DenseNet (diabetic_retinopathy_model.onnx)",
             }
         except Exception as e:
             print(f"[Inference] Error: {e}")

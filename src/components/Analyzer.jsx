@@ -103,7 +103,7 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
             Upload Retinal Fundus Image
           </h2>
           <p className="text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-            Select or drag & drop a retinal fundus scan to run EfficientNetB0 severity analysis.
+            Select or drag & drop a retinal fundus scan to run DenseNet severity analysis.
           </p>
         </div>
 

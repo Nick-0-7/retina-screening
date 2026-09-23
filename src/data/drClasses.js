@@ -114,8 +114,8 @@ export const DR_STAGES = [
 ];
 
 export const MODEL_SPECS = {
-  name: "EfficientNetB0",
-  architecture: "Convolutional Neural Network (Compound Scaling)",
+  name: "DenseNet",
+  architecture: "Densely Connected Convolutional Networks (DenseNet)",
   inputDimensions: "224 × 224 × 3 (RGB)",
   totalClasses: 5,
   weights: "ImageNet Pre-trained + Fine-Tuned on Kaggle EyePACS / APTOS 2019 Datasets",

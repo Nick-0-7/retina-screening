@@ -13,7 +13,7 @@
 
 > **Classify → Explain**
 
-A deep-learning based system designed to classify retinal fundus images into five diabetic retinopathy severity levels using an EfficientNetB0-based architecture.
+A deep-learning based system designed to classify retinal fundus images into five diabetic retinopathy severity levels using a DenseNet-based architecture.
 
 The primary focus of the project is **Moderate Diabetic Retinopathy**, with additional analysis across all five severity categories.
 
@@ -32,7 +32,7 @@ Retinal Fundus Image
    Preprocessing
         │
         ▼
-  EfficientNetB0
+     DenseNet
         │
         ▼
   DR Classification
@@ -111,7 +111,7 @@ React Interface
 | Technology | Purpose |
 |---|---|
 | **TensorFlow / Keras** | Model development, training, and inference |
-| **EfficientNetB0** | Deep-learning image classification backbone |
+| **DenseNet** | Deep-learning image classification backbone |
 | **ImageNet Weights** | Transfer-learning initialization |
 | **Grad-CAM** | Model explainability |
 
@@ -124,7 +124,7 @@ Fundus Image
 Image Preprocessing
       │
       ▼
-EfficientNetB0
+DenseNet
       │
       ▼
 Feature Extraction
@@ -190,7 +190,7 @@ Grad-CAM
               ┌─────────────────────┐
               │   TensorFlow/Keras  │
               │                     │
-              │    EfficientNetB0   │
+              │       DenseNet      │
               └──────────┬──────────┘
                          │
                          ▼
@@ -225,4 +225,4 @@ Grad-CAM
 
 ### Technology Flow
 
-> **React + Tailwind CSS** provide the user interface, **FastAPI** handles communication and model inference, **TensorFlow/Keras + EfficientNetB0** perform diabetic retinopathy classification, and **Grad-CAM** provides visual model explainability.
+> **React + Tailwind CSS** provide the user interface, **FastAPI** handles communication and model inference, **TensorFlow/Keras + DenseNet** perform diabetic retinopathy classification, and **Grad-CAM** provides visual model explainability.

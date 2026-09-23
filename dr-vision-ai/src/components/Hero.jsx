@@ -17,7 +17,7 @@ export default function Hero({ onAnalyzeClick, onHowItWorksClick }) {
             {/* Clinical AI Badge */}
             <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-300 text-xs font-semibold tracking-wide uppercase">
               <SparklesIcon className="w-4 h-4 text-blue-500 animate-pulse" />
-              <span>EfficientNetB0 Deep Learning Model</span>
+              <span>DenseNet Deep Learning Model</span>
             </div>
 
             {/* Headline */}
@@ -147,7 +147,7 @@ export default function Hero({ onAnalyzeClick, onHowItWorksClick }) {
                 <div className="absolute bottom-3 left-3 right-3 p-2.5 rounded-xl bg-slate-950/90 backdrop-blur-md border border-slate-800 flex items-center justify-between">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-slate-400 font-mono">Neural Architecture</div>
-                    <div className="text-sm font-bold text-teal-400">EfficientNetB0 (Keras)</div>
+                    <div className="text-sm font-bold text-teal-400">DenseNet (Keras)</div>
                   </div>
                   <div className="text-right">
                     <div className="text-[10px] uppercase tracking-wider text-slate-400 font-mono">Classification Target</div>

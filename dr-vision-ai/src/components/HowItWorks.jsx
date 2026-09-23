@@ -18,7 +18,7 @@ export default function HowItWorks({ onStartUpload }) {
       number: "02",
       icon: Cpu,
       title: "AI Analysis",
-      subtitle: "EfficientNetB0 Processing",
+      subtitle: "DenseNet Processing",
       description: "The deep learning model resizes image to 224×224, extracts microvascular features, and evaluates lesion patterns across neural layers.",
       color: "from-teal-500 to-emerald-600",
       shadow: "shadow-teal-500/20",

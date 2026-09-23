@@ -29,85 +29,16 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
 
     const reader = new FileReader();
     reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const validation = checkRetinalSpectrum(img);
-        if (!validation.isValid) {
-          setErrorMsg(validation.reason);
-          setSelectedImage(null);
-          return;
-        }
-
-        setSelectedImage({
-          file: file,
-          url: reader.result,
-          name: file.name,
-          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-          type: file.type
-        });
-      };
-      img.src = reader.result;
+      setSelectedImage({
+        file: file,
+        url: reader.result,
+        name: file.name,
+        size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+        type: file.type
+      });
     };
     reader.readAsDataURL(file);
   };
-
-  // 4-signal physics-based retinal validation (mirrors App.jsx & backend/app.py)
-  const checkRetinalSpectrum = (imgElement) => {
-    try {
-      const SIZE = 160;
-      const canvas = document.createElement('canvas');
-      canvas.width = SIZE; canvas.height = SIZE;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(imgElement, 0, 0, SIZE, SIZE);
-      const d = ctx.getImageData(0, 0, SIZE, SIZE).data;
-      const totalPixels = SIZE * SIZE;
-
-      let darkBorder = 0, deepFundusRed = 0, skinTone = 0, brightNeutral = 0, lit = 0;
-
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        if (lum < 18) {
-          darkBorder++;
-        } else {
-          lit++;
-          if (r > 55 && (r - b) > 35 && (r - g) > 12 && lum < 110) deepFundusRed++;
-          if (lum > 90 && lum < 235 && (r - b) > 15 && (r - b) < 110 && r > 90 && (r - g) < 65) skinTone++;
-          if (lum > 140 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25) brightNeutral++;
-        }
-      }
-
-      const darkBorderRatio    = darkBorder   / totalPixels;
-      const deepFundusRedRatio = lit > 0 ? deepFundusRed / lit : 0;
-      const skinRatio          = lit > 0 ? skinTone      / lit : 0;
-      const brightNeutralRatio = lit > 0 ? brightNeutral / lit : 0;
-
-      // Rule 1: Face / Portrait / Selfie
-      if (skinRatio > 0.22 && darkBorderRatio < 0.25)
-        return { isValid: false, reason: '🚫 Non-Retinal Image Rejected: A human face, portrait, or selfie was detected. Please upload a genuine retinal fundus photograph.' };
-
-      // Rule 2: Landscape / Document / Object
-      if (darkBorderRatio < 0.12 && brightNeutralRatio > 0.35)
-        return { isValid: false, reason: '🚫 Non-Retinal Image Rejected: Image appears to be a landscape, document, or object. Please upload a valid ocular fundus scan.' };
-
-      // Rule 3: No fundus border + no retinal red
-      if (darkBorderRatio < 0.12 && deepFundusRedRatio < 0.20)
-        return { isValid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks the dark circular border and blood-red spectrum of a genuine fundus scan.' };
-
-      // Rule 4: Insufficient deep retinal red
-      if (deepFundusRedRatio < 0.18 && darkBorderRatio < 0.20)
-        return { isValid: false, reason: '🚫 Non-Retinal Image Rejected: Image lacks the deep ocular blood-red spectrum of a retinal fundus photograph.' };
-
-      return { isValid: true, reason: null };
-    } catch (e) {
-      return { isValid: true, reason: null };
-    }
-  };
-
-
-
-
 
   // Drag & drop handlers
   const handleDragOver = (e) => {
@@ -250,8 +181,7 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
                   </div>
 
                   {/* Remove & Replace Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2">
-
+                  <div className="flex items-center space-x-3 pt-2">
                     <button
                       onClick={handleRemoveImage}
                       className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-rose-500 text-rose-400 hover:text-rose-300 text-xs font-medium transition-colors"

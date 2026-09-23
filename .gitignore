@@ -1,44 +1,22 @@
-# Dependencies
+# Node
 node_modules/
-.venv/
-venv/
-env/
+dist/
+
+# Dataset / archive
+archive/
+
+# Trained model
+diabetic_retinopathy_model.keras/
 
 # Python
 __pycache__/
-*.py[cod]
-.pytest_cache/
+*.pyc
+.venv/
+venv/
 
-# Environment / secrets
+# Environment variables
 .env
 .env.*
-!.env.example
 
-# Training data
-dataset/
-data/
-*.zip
-
-# ML model files
-*.keras
-*.h5
-*.hdf5
-*.ckpt
-*.pth
-*.pt
-
-# Logs
-*.log
-
-# Build outputs
-dist/
-build/
-.next/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
+# Jupyter
+.ipynb_checkpoints/

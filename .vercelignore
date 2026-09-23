@@ -6,12 +6,7 @@ dist/
 *.md
 
 # Large dataset images (not needed on Vercel)
-archive/
-dataset/
-data/
-*.zip
-*.tar.gz
-*.csv
+/archive/
 
 # ML model training artifacts (only .onnx files in backend/model/ are used)
 *.keras
@@ -20,12 +15,12 @@ data/
 *.pth
 *.pt
 *.ckpt
-diabetic_retinopathy_model.keras/
+/diabetic_retinopathy_model.keras/
 
 # Test scripts and duplicate folders
 test_live_api.py
-dr-vision-ai/
-dr-training/
+/dr-vision-ai/
+/dr-training/
 
 # Python cache & virtualenvs
 __pycache__/

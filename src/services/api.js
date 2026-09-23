@@ -50,11 +50,25 @@ export async function analyzeRetinalImage(imageInput) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`Server returned error status ${response.status}: ${errorText || 'Prediction failed'}`);
+      let errorMessage = `Server error (${response.status})`;
+      try {
+        const errJson = await response.json();
+        if (errJson.detail) {
+          errorMessage = typeof errJson.detail === 'string' ? errJson.detail : (errJson.detail.message || JSON.stringify(errJson.detail));
+        } else if (errJson.message) {
+          errorMessage = errJson.message;
+        }
+      } catch {
+        const errorText = await response.text().catch(() => '');
+        if (errorText) errorMessage = errorText;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
+    if (data.is_valid === false || data.error === 'NON_RETINAL_IMAGE') {
+      throw new Error(data.message || 'Non-Retinal Image Rejected: The uploaded photo is not an ocular fundus scan.');
+    }
     return normalizeResponse(data);
   } catch (err) {
     clearTimeout(timeoutId);

@@ -6,7 +6,7 @@ Self-contained: validation + ONNX inference, no import from backend/app.py
 import io
 import os
 import sys
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import numpy as np
@@ -58,14 +58,7 @@ def load_model():
 def validate_retinal_fundus_image(img: Image.Image):
     """
     Validates whether the uploaded image is an ocular fundus photograph.
-    Rejects faces, portraits, selfies, clothing, nature, documents, etc.
-
-    Key physics of fundus photography:
-    - The choroid/vessel background is DEEP BLOOD RED (R - B > 50, R - G > 20).
-    - Camera lens aperture creates DARK OUTER BORDERS (vignetting).
-    - Background walls, skin, clothing, sky are LIGHT NEUTRAL/COOL in color.
-
-    Returns: (is_valid: bool, reason: str)
+    Rejects faces, portraits, selfies, clothing, nature, documents, logos, cartoons, etc.
     """
     try:
         img_rgb = img.convert("RGB").resize((200, 200), Image.Resampling.BILINEAR)
@@ -74,74 +67,65 @@ def validate_retinal_fundus_image(img: Image.Image):
         lum = 0.299 * r + 0.587 * g + 0.114 * b
 
         non_black = lum > 15
-        total = float(np.sum(non_black))
-        if total < (200 * 200 * 0.08):
-            return False, "Image is too dark or empty for retinal analysis."
+        total_non_black = float(np.sum(non_black))
+        if total_non_black < (200 * 200 * 0.05):
+            return False, "Image is too dark or empty for retinal analysis. Please upload a clear fundus photograph."
 
-        # ── Check 1: Deep retinal red tissue ─────────────────────────────────
-        # Actual fundus tissue: R - B > 55, R - G > 22, R > 75
-        # Faces / skin: R - B is ~15–35 (pale peach)
-        # Clothing / walls: R - B < 10 (gray, white, blue, green)
-        deep_red = non_black & ((r - b) > 55) & ((r - g) > 22) & (r > 75)
-        deep_red_ratio = float(np.sum(deep_red) / total)
+        # Retinal tissue has red as dominant spectral channel
+        red_dominant = non_black & (r >= g) & (r >= b)
+        red_dominant_ratio = float(np.sum(red_dominant) / total_non_black)
 
-        # ── Check 2: Non-ocular neutral / bright background ───────────────────
-        # Gray walls, white shirts, skin highlights, blue suits, hair
-        non_ocular = non_black & (lum > 100) & ((r - b) < 50)
-        non_ocular_ratio = float(np.sum(non_ocular) / total)
+        # Deep retinal vascular/choroidal tissue
+        deep_red = non_black & ((r - b) > 30) & ((r - g) > 10) & (r > 50)
+        deep_red_ratio = float(np.sum(deep_red) / total_non_black)
 
-        # ── Check 3: Camera Lens Aperture Darkness (Vignetting) ──────────────
-        # In fundus photos the outer 12% border is black (lens mask).
+        # Non-ocular / bright cool or neutral pixels (white background, clothes, walls, blue skies, text)
+        non_ocular = non_black & (((lum > 90) & ((r - b) < 30)) | (b > r + 10) | (g > r + 20))
+        non_ocular_ratio = float(np.sum(non_ocular) / total_non_black)
+
+        # Camera lens aperture darkness (outer 10% perimeter vignetting)
         h, w = 200, 200
         border = np.concatenate([
-            lum[:int(h * 0.12), :].ravel(),
-            lum[-int(h * 0.12):, :].ravel(),
-            lum[:, :int(w * 0.12)].ravel(),
-            lum[:, -int(w * 0.12):].ravel(),
+            lum[:int(h * 0.10), :].ravel(),
+            lum[-int(h * 0.10):, :].ravel(),
+            lum[:, :int(w * 0.10)].ravel(),
+            lum[:, -int(w * 0.10):].ravel(),
         ])
-        border_dark_ratio = float(np.sum(border < 40) / len(border))
+        border_dark_ratio = float(np.sum(border < 45) / len(border))
 
-        print(
-            f"[Validation] deep_red={deep_red_ratio:.3f} "
-            f"non_ocular={non_ocular_ratio:.3f} "
-            f"border_dark={border_dark_ratio:.3f}"
-        )
-
-        # ── Decision Logic ────────────────────────────────────────────────────
-
-        # HARD REJECT: virtually no deep retinal red AND a bright background
-        # → clearly a face / landscape / clothing photo
-        if deep_red_ratio < 0.30 and non_ocular_ratio > 0.25:
+        # Rejection Rule 1: High non-ocular content (bright whites, cool colors, blue sky, paper, clothing)
+        if non_ocular_ratio > 0.18:
             return (
                 False,
-                "Non-Retinal Image Rejected: The uploaded photo is not an ocular fundus scan "
-                "(detected: face, portrait, selfie, landscape, clothing, or document). "
-                "Please upload a clear retinal fundus photograph.",
+                "Non-Retinal Image Detected: Image contains non-ocular visual elements (such as bright background, clothing, document, cartoon, or natural landscape). Please upload an authentic retinal fundus photograph."
             )
 
-        # HARD REJECT: almost zero deep retinal red (face / white wall / document)
-        if deep_red_ratio < 0.20:
+        # Rejection Rule 2: Red dominance
+        if red_dominant_ratio < 0.60:
             return (
                 False,
-                "Non-Retinal Image Rejected: Image lacks the deep blood-red spectrum of an "
-                "ocular fundus scan. Please upload a valid retinal photograph.",
+                "Non-Retinal Image Detected: Image lacks the characteristic red/orange spectrum of retinal tissue. Please upload an authentic retinal fundus photograph."
             )
 
-        # HARD REJECT: overwhelmingly bright non-ocular background
-        if non_ocular_ratio > 0.50:
+        # Rejection Rule 3: Deep red saturation check
+        if deep_red_ratio < 0.35:
+            if not (border_dark_ratio > 0.40 and non_ocular_ratio < 0.05 and red_dominant_ratio > 0.85):
+                return (
+                    False,
+                    "Non-Retinal Image Detected: Image lacks the vascular choroidal saturation of an ocular fundus photograph. Please upload a valid retinal scan."
+                )
+
+        # Rejection Rule 4: Border aperture mask
+        if border_dark_ratio < 0.20 and deep_red_ratio < 0.70:
             return (
                 False,
-                "Non-Retinal Image Rejected: Image contains non-ocular elements such as "
-                "light background walls, clothing, or skin tones. "
-                "Please select an ocular fundus scan.",
+                "Non-Retinal Image Detected: Missing the circular optical aperture mask of an ophthalmic fundus camera. Please upload an authentic retinal fundus photograph."
             )
 
         return True, "Valid Retinal Scan"
 
     except Exception as e:
-        # Fail open (let ONNX run) but log the exception
-        print(f"[Validation] Exception: {e}")
-        return True, "Validation skipped"
+        return False, f"Image validation error: {str(e)}"
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -181,16 +165,15 @@ async def predict(request: Request, file: UploadFile = File(None)):
     try:
         img = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:
-        return {
-            "is_valid": False,
-            "error": "INVALID_FILE",
-            "message": "Cannot decode image. Please upload a valid JPG or PNG retinal scan.",
-        }
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot decode image. Please upload a valid JPG or PNG retinal scan."
+        )
 
     # ── Retinal Validation Guard ──────────────────────────────────────────────
     is_valid, reason = validate_retinal_fundus_image(img)
     if not is_valid:
-        return {"is_valid": False, "error": "NON_RETINAL_IMAGE", "message": reason}
+        raise HTTPException(status_code=400, detail=reason)
 
     # ── ONNX Inference ────────────────────────────────────────────────────────
     session = load_model()

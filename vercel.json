@@ -1,4 +1,8 @@
 {
+  "framework": "vite",
+  "installCommand": "npm install --include=dev",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "functions": {
     "api/predict.py": {
       "maxDuration": 30,
@@ -6,7 +10,7 @@
     }
   },
   "rewrites": [
-    { "source": "/predict",     "destination": "/api/predict" },
-    { "source": "/health",      "destination": "/api/predict" }
+    { "source": "/predict", "destination": "/api/predict" },
+    { "source": "/health", "destination": "/api/predict" }
   ]
 }

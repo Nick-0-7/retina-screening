@@ -298,52 +298,49 @@ export default function Analyze() {
 
 
     if (!selectedImage) {
-
       setErrorMsg(
         "Please upload a retinal fundus image."
       );
-
       return;
     }
 
+    if (selectedImage.isRetinalValid === false) {
+      setErrorMsg(
+        selectedImage.validationMessage ||
+        "The uploaded file is not an authentic ocular fundus photograph. Please upload a valid retinal scan."
+      );
+      return;
+    }
 
     setErrorMsg(null);
     setIsProcessing(true);
 
     try {
-
       const result = await analyzeRetinalImage(
         selectedImage.file || selectedImage.url
       );
 
       setPredictionResult(result);
-
       setIsProcessing(false);
 
       setTimeout(() => {
-
         const resultsElement =
           document.getElementById("results");
 
         if (resultsElement) {
-
           resultsElement.scrollIntoView({
             behavior: "smooth",
           });
-
         }
-
       }, 100);
 
     } catch (err) {
-
       console.error(err);
-
+      setPredictionResult(null);
       setErrorMsg(
         err.message ||
         "Failed to complete retinal image analysis."
       );
-
       setIsProcessing(false);
     }
   };

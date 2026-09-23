@@ -1,9 +1,13 @@
+
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Trash2, RefreshCw, Zap, AlertCircle, Sparkles } from 'lucide-react';
+import { Upload, Image as ImageIcon, Trash2, RefreshCw, Zap, AlertCircle, Sparkles, ShieldAlert, CheckCircle2, Loader2 } from 'lucide-react';
+import { validateFundusImageClient } from '../utils/imageValidator';
 
 export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTrigger, isProcessing, errorMsg, setErrorMsg }) {
   const fileInputRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationStatus, setValidationStatus] = useState(null);
 
   // Handle local file selection
   const handleFileChange = (e) => {
@@ -13,9 +17,10 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
     }
   };
 
-  // Validate format and set preview
+  // Validate format, verify retinal scan, and set preview
   const validateAndSetFile = (file) => {
     setErrorMsg(null);
+    setValidationStatus(null);
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
     if (!validTypes.includes(file.type)) {
       setErrorMsg('Invalid file format. Please upload a valid JPG, JPEG, or PNG retinal image.');
@@ -27,14 +32,30 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
       return;
     }
 
+    setIsValidating(true);
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
+      const dataUrl = reader.result;
+      
+      // Perform instant in-browser fundus image validation
+      const validation = await validateFundusImageClient(file);
+      setIsValidating(false);
+      setValidationStatus(validation);
+
+      if (!validation.isValid) {
+        setErrorMsg(validation.message);
+      } else {
+        setErrorMsg(null);
+      }
+
       setSelectedImage({
         file: file,
-        url: reader.result,
+        url: dataUrl,
         name: file.name,
         size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-        type: file.type
+        type: file.type,
+        isRetinalValid: validation.isValid,
+        validationMessage: validation.message
       });
     };
     reader.readAsDataURL(file);
@@ -63,6 +84,8 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
   const handleRemoveImage = () => {
     setSelectedImage(null);
     setErrorMsg(null);
+    setValidationStatus(null);
+    setIsValidating(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -160,14 +183,30 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
                 {/* Metadata Details */}
                 <div className="flex-1 space-y-3 text-left w-full">
                   <div className="flex items-center space-x-2">
-                    <span className="px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold">
-                      Image Loaded
-                    </span>
+                    {isValidating ? (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying Retinal Scan...
+                      </span>
+                    ) : validationStatus && !validationStatus.isValid ? (
+                      <span className="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-500" /> Non-Retinal Image Detected
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Retinal Scan Verified
+                      </span>
+                    )}
                   </div>
 
                   <h4 className="text-lg font-bold text-white truncate max-w-xs sm:max-w-md">
                     {selectedImage.name}
                   </h4>
+
+                  {validationStatus && !validationStatus.isValid && (
+                    <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/80 text-rose-300 text-xs leading-relaxed">
+                      {validationStatus.message}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3 text-xs text-slate-400 font-mono">
                     <div>
@@ -214,16 +253,32 @@ export default function Analyzer({ selectedImage, setSelectedImage, onAnalyzeTri
           {/* LARGE PRIMARY BUTTON: ANALYZE IMAGE */}
           <div className="pt-2">
             <button
-              disabled={!selectedImage || isProcessing}
+              disabled={
+                !selectedImage ||
+                isProcessing ||
+                isValidating ||
+                (validationStatus && !validationStatus.isValid)
+              }
               onClick={onAnalyzeTrigger}
               className={`w-full py-4 sm:py-5 rounded-2xl font-extrabold text-base sm:text-lg flex items-center justify-center space-x-3 transition-all duration-300 shadow-xl ${
-                !selectedImage || isProcessing
+                !selectedImage ||
+                isProcessing ||
+                isValidating ||
+                (validationStatus && !validationStatus.isValid)
                   ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
                   : 'bg-gradient-to-r from-blue-600 via-teal-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.01] active:scale-[0.99]'
               }`}
             >
               <Zap className="w-6 h-6 fill-current animate-pulse" />
-              <span>{isProcessing ? 'Processing AI Neural Pipeline...' : 'Analyze Retinal Image'}</span>
+              <span>
+                {isValidating
+                  ? 'Verifying Retinal Scan...'
+                  : validationStatus && !validationStatus.isValid
+                  ? 'Upload Authentic Retinal Scan to Analyze'
+                  : isProcessing
+                  ? 'Processing AI Neural Pipeline...'
+                  : 'Analyze Retinal Image'}
+              </span>
             </button>
           </div>
 

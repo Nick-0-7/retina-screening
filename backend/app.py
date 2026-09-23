@@ -88,15 +88,98 @@ def read_root():
 def get_model_info():
     return model_info
 
+def validate_retinal_fundus_image(img: Image.Image):
+    """
+    Validates whether the uploaded image is an ocular fundus photograph.
+    Rejects faces, portraits, selfies, clothing, nature, documents, logos, cartoons, etc.
+    """
+    try:
+        img_rgb = img.convert("RGB").resize((200, 200), Image.Resampling.BILINEAR)
+        a = np.array(img_rgb, dtype=np.float32)
+        r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+
+        non_black = lum > 15
+        total_non_black = float(np.sum(non_black))
+        if total_non_black < (200 * 200 * 0.05):
+            return False, "Image is too dark or empty for retinal analysis. Please upload a clear fundus photograph."
+
+        # Retinal tissue has red as dominant spectral channel
+        red_dominant = non_black & (r >= g) & (r >= b)
+        red_dominant_ratio = float(np.sum(red_dominant) / total_non_black)
+
+        # Deep retinal vascular/choroidal tissue
+        deep_red = non_black & ((r - b) > 30) & ((r - g) > 10) & (r > 50)
+        deep_red_ratio = float(np.sum(deep_red) / total_non_black)
+
+        # Non-ocular / bright cool or neutral pixels (white background, clothes, walls, blue skies, text)
+        non_ocular = non_black & (((lum > 90) & ((r - b) < 30)) | (b > r + 10) | (g > r + 20))
+        non_ocular_ratio = float(np.sum(non_ocular) / total_non_black)
+
+        # Camera lens aperture darkness (outer 10% perimeter vignetting)
+        h, w = 200, 200
+        border = np.concatenate([
+            lum[:int(h * 0.10), :].ravel(),
+            lum[-int(h * 0.10):, :].ravel(),
+            lum[:, :int(w * 0.10)].ravel(),
+            lum[:, -int(w * 0.10):].ravel(),
+        ])
+        border_dark_ratio = float(np.sum(border < 45) / len(border))
+
+        # Rejection Rule 1: High non-ocular content (bright whites, cool colors, blue sky, paper, clothing)
+        if non_ocular_ratio > 0.18:
+            return (
+                False,
+                "Non-Retinal Image Detected: Image contains non-ocular visual elements (such as bright background, clothing, document, cartoon, or natural landscape). Please upload an authentic retinal fundus photograph."
+            )
+
+        # Rejection Rule 2: Red dominance
+        if red_dominant_ratio < 0.60:
+            return (
+                False,
+                "Non-Retinal Image Detected: Image lacks the characteristic red/orange spectrum of retinal tissue. Please upload an authentic retinal fundus photograph."
+            )
+
+        # Rejection Rule 3: Deep red saturation check
+        if deep_red_ratio < 0.35:
+            if not (border_dark_ratio > 0.40 and non_ocular_ratio < 0.05 and red_dominant_ratio > 0.85):
+                return (
+                    False,
+                    "Non-Retinal Image Detected: Image lacks the vascular choroidal saturation of an ocular fundus photograph. Please upload a valid retinal scan."
+                )
+
+        # Rejection Rule 4: Border aperture mask
+        if border_dark_ratio < 0.20 and deep_red_ratio < 0.70:
+            return (
+                False,
+                "Non-Retinal Image Detected: Missing the circular optical aperture mask of an ophthalmic fundus camera. Please upload an authentic retinal fundus photograph."
+            )
+
+        return True, "Valid Retinal Scan"
+
+    except Exception as e:
+        return False, f"Image validation error: {str(e)}"
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     """
     Accepts an uploaded retinal fundus image and returns live inference prediction JSON.
+    Rejects non-retinal images with HTTP 400 Bad Request.
     """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type. Retinal image file required.")
 
     contents = await file.read()
+
+    try:
+        img = Image.open(io.BytesIO(contents)).convert('RGB')
+    except Exception:
+        raise HTTPException(status_code=400, detail="Cannot decode image file. Please upload a valid JPG or PNG scan.")
+
+    # Validate whether the image is actually a retinal fundus scan
+    is_valid, reason = validate_retinal_fundus_image(img)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=reason)
 
     if model is not None:
         try:
@@ -107,7 +190,6 @@ async def predict(file: UploadFile = File(...)):
                 target_h = model.input_shape[1] if model.input_shape[1] is not None else 224
                 target_w = model.input_shape[2] if model.input_shape[2] is not None else 224
 
-            img = Image.open(io.BytesIO(contents)).convert('RGB')
             img = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
             
             # Normalize to [0.0, 1.0]

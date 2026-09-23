@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Eye, Activity, CheckCircle, Sparkles } from 'lucide-react';
+import { Cpu, Loader2 } from 'lucide-react';
 
-export default function ScanningModal({ isOpen, imagePreview }) {
+export default function ScanningModal({ isOpen }) {
   const [progress, setProgress] = useState(15);
   const [statusIndex, setStatusIndex] = useState(0);
 
   const statusMessages = [
-    "Resizing input to 224 × 224 × 3 tensor...",
-    "Applying Green Channel contrast enhancement...",
-    "Extracting retinal microvascular features...",
-    "Evaluating EfficientNetB0 bottleneck blocks...",
-    "Analyzing lesion distribution patterns...",
-    "Computing 5-class Softmax probability tensor...",
+    "Preparing retinal image...",
+    "Enhancing image quality...",
+    "Extracting retinal features...",
+    "Analyzing retinal patterns...",
+    "Evaluating disease severity...",
+    "Calculating AI prediction...",
     "Finalizing diagnostic report..."
   ];
 
@@ -25,14 +25,16 @@ export default function ScanningModal({ isOpen, imagePreview }) {
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 95) {
-          clearInterval(interval);
           return 95;
         }
-        return prev + 12;
+
+        return prev + 8;
       });
 
-      setStatusIndex((prev) => (prev + 1) % statusMessages.length);
-    }, 240);
+      setStatusIndex((prev) => {
+        return (prev + 1) % statusMessages.length;
+      });
+    }, 500);
 
     return () => clearInterval(interval);
   }, [isOpen]);
@@ -40,66 +42,61 @@ export default function ScanningModal({ isOpen, imagePreview }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-800 p-8 text-center text-white shadow-2xl space-y-6 overflow-hidden">
-        
-        {/* Ambient Top Glow */}
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+      
+      <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-8 text-center text-white shadow-2xl">
 
-        {/* Retinal Frame with Scanning Laser */}
-        <div className="relative w-44 h-44 mx-auto rounded-2xl overflow-hidden bg-black border-2 border-cyan-500/40 shadow-xl group">
-          {imagePreview ? (
-            <img
-              src={imagePreview}
-              alt="Scanning Fundus"
-              className="w-full h-full object-cover filter contrast-125"
+        {/* Loading Icon */}
+        <div className="flex justify-center mb-6">
+          <div className="relative flex items-center justify-center w-16 h-16 rounded-full bg-cyan-500/10 border border-cyan-500/30">
+            
+            <Loader2
+              className="w-8 h-8 text-cyan-400 animate-spin"
             />
-          ) : (
-            <div className="w-full h-full bg-red-950 flex items-center justify-center">
-              <Eye className="w-16 h-16 text-red-500 animate-pulse" />
-            </div>
-          )}
 
-          {/* Animated Laser Scanning Line */}
-          <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_#22d3ee] animate-laser-scan" />
-          
-          {/* Target Reticle Grid */}
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className="w-24 h-24 rounded-full border border-dashed border-cyan-400/50 animate-spin-slow" />
+            <div className="absolute inset-0 rounded-full border border-cyan-400/20 animate-ping" />
           </div>
         </div>
 
-        {/* Status Headline */}
-        <div className="space-y-2">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-semibold">
-            <Cpu className="w-3.5 h-3.5 animate-spin" />
-            <span>EfficientNetB0 Engine</span>
-          </div>
-          <h3 className="text-2xl font-black text-white tracking-tight">
-            Analyzing retinal features...
-          </h3>
-          <p className="text-xs font-mono text-cyan-300 h-5 transition-all duration-300">
-            {statusMessages[statusIndex]}
-          </p>
+        {/* AI Engine */}
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-4 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-medium">
+          <Cpu className="w-3.5 h-3.5" />
+          <span>AI Analysis Engine</span>
         </div>
 
-        {/* Progress Bar & Percentage */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center text-xs font-mono text-slate-400">
-            <span>Neural Inference</span>
-            <span className="text-teal-400 font-bold">{progress}%</span>
+        {/* Heading */}
+        <h3 className="text-xl font-semibold text-white">
+          Analyzing retinal image
+        </h3>
+
+        {/* Current Status */}
+        <p className="mt-2 h-5 text-sm text-slate-400 transition-all duration-300">
+          {statusMessages[statusIndex]}
+        </p>
+
+        {/* Progress */}
+        <div className="mt-7">
+
+          <div className="flex justify-between mb-2 text-xs text-slate-400">
+            <span>Processing</span>
+
+            <span className="text-cyan-400 font-semibold">
+              {progress}%
+            </span>
           </div>
-          
-          <div className="w-full h-3 rounded-full bg-slate-800 p-0.5 overflow-hidden border border-slate-700">
+
+          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-500 via-teal-400 to-cyan-400 transition-all duration-300 shadow-[0_0_10px_#22d3ee]"
+              className="h-full rounded-full bg-cyan-400 transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
+
         </div>
 
-        <p className="text-[11px] text-slate-500 font-mono">
-          Please wait while the feature tensors are processed...
+        {/* Bottom Message */}
+        <p className="mt-5 text-xs text-slate-500">
+          Please wait while the AI processes the retinal features...
         </p>
 
       </div>

@@ -1,16 +1,25 @@
 """
-DR Vision AI — FastAPI Backend (Vercel Serverless)
-Self-contained prediction endpoint with strict retinal image validation.
-Version: 3.0.0
+DR Vision AI - Python FastAPI Backend Endpoint
+Serves the POST /predict endpoint for Diabetic Retinopathy Detection using trained Keras Deep Learning Model.
 """
-import io
+
 import os
-from fastapi import FastAPI, UploadFile, File, Request
+import io
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import numpy as np
 
-app = FastAPI(title="DR Vision AI", version="3.0.0")
+# Suppress verbose TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+app = FastAPI(
+    title="DR Vision AI Backend API",
+    description="Diabetic Retinopathy Detection using trained Keras deep learning model",
+    version="1.1.0"
+)
+
+# Enable CORS for React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,185 +29,131 @@ app.add_middleware(
 )
 
 CLASSES = ["No_DR", "Mild", "Moderate", "Severe", "Proliferate_DR"]
-_session = None
-_input_name = None
-_output_name = None
-_model_tried = False
 
-ONNX_PATHS = [
-    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.onnx"),
-    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.onnx"),
+# Global model state
+model = None
+model_info = {
+    "loaded": False,
+    "source_path": None,
+    "input_shape": None,
+    "output_shape": None,
+    "classes": CLASSES
+}
+
+# Auto-discover model location
+MODEL_CANDIDATES = [
+    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.keras"),
+    r"C:\Users\AJINKYA\Downloads\diabetic_retinopathy_model.keras",
+    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.keras"),
 ]
 
-def _load():
-    global _session, _input_name, _output_name, _model_tried
-    if _model_tried:
-        return _session
-    _model_tried = True
+def load_trained_keras_model():
+    global model, model_info
     try:
-        import onnxruntime as ort
-        for p in ONNX_PATHS:
-            if os.path.exists(p):
-                s = ort.InferenceSession(p, providers=["CPUExecutionProvider"])
-                _session = s
-                _input_name = s.get_inputs()[0].name
-                _output_name = s.get_outputs()[0].name
-                print(f"[DR] ONNX loaded: {p}")
-                return s
+        import keras
+        for candidate_path in MODEL_CANDIDATES:
+            if os.path.exists(candidate_path):
+                print(f"[DR Vision AI] Found trained model at: {candidate_path}")
+                model = keras.models.load_model(candidate_path, compile=False)
+                
+                # Extract input dimensions
+                in_shape = model.input_shape
+                out_shape = model.output_shape
+                
+                model_info["loaded"] = True
+                model_info["source_path"] = candidate_path
+                model_info["input_shape"] = [str(dim) for dim in in_shape]
+                model_info["output_shape"] = [str(dim) for dim in out_shape]
+                
+                print(f"[DR Vision AI] Model successfully loaded! Input shape: {in_shape}, Output shape: {out_shape}")
+                return
+        print("[DR Vision AI] No .keras model file found in candidate paths. Will use demonstration predictions.")
     except Exception as e:
-        print(f"[DR] ONNX error: {e}")
-    return None
+        print(f"[DR Vision AI] Error loading Keras model: {e}")
 
-
-def _validate(img: Image.Image):
-    """
-    Rejects non-retinal photos using a 4-signal physics-based approach.
-    Returns (is_valid: bool, reason: str).
-
-    Key signals:
-      1. darkBorderRatio   — Real fundus always has a large dark circular border
-      2. deepFundusRed     — Actual retinal tissue: DARK + highly red (lum < 110)
-      3. skinTone          — Faces/portraits: BRIGHT + mildly reddish (lum 90-235)
-      4. brightNeutral     — Backgrounds, walls, clothing, sky
-
-    The critical fix: skin tones satisfy old "deep red" criteria (R-B≈70) because
-    they ARE reddish — but they're BRIGHT. Real blood-red fundus tissue is DARK.
-    Adding the lum < 110 constraint to deepFundusRed cleanly separates them.
-    """
-    try:
-        SIZE = 160
-        a = np.array(img.convert("RGB").resize((SIZE, SIZE)), dtype=np.float32)
-        r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
-        lum = 0.299 * r + 0.587 * g + 0.114 * b
-        total_pixels = float(SIZE * SIZE)
-
-        dark_mask   = lum < 18
-        dark_border = float(dark_mask.sum())
-        lit         = total_pixels - dark_border
-
-        if lit < total_pixels * 0.05:
-            return False, "Image is too dark or empty for retinal analysis."
-
-        dark_border_ratio = dark_border / total_pixels
-
-        # Signal 1 — deep retinal blood red: DARK + high red dominance
-        deep_red_mask = (~dark_mask) & (r > 55) & ((r - b) > 35) & ((r - g) > 12) & (lum < 110)
-        # Signal 2 — skin tone: BRIGHT + mildly reddish (face, portraits, hands)
-        skin_mask = (~dark_mask) & (lum > 90) & (lum < 235) & ((r - b) > 15) & ((r - b) < 110) & (r > 90) & ((r - g) < 65)
-        # Signal 3 — bright near-neutral: walls, backgrounds, clothing, sky
-        bright_mask = (~dark_mask) & (lum > 140) & (np.abs(r - g) < 25) & (np.abs(g - b) < 25)
-
-        deep_red_ratio     = float(deep_red_mask.sum()) / lit if lit > 0 else 0
-        skin_ratio         = float(skin_mask.sum())     / lit if lit > 0 else 0
-        bright_neutral_ratio = float(bright_mask.sum()) / lit if lit > 0 else 0
-
-        print(f"[Validation] dark_border={dark_border_ratio:.3f}  deep_red={deep_red_ratio:.3f}  skin={skin_ratio:.3f}  bright_neutral={bright_neutral_ratio:.3f}")
-
-        # ── Rule 1: Face / Portrait / Selfie ─────────────────────────────────
-        if skin_ratio > 0.22 and dark_border_ratio < 0.25:
-            return False, (
-                "Non-Retinal Image Rejected: A human face, portrait, or selfie was detected. "
-                "Please upload a genuine retinal fundus photograph taken by an ophthalmoscope."
-            )
-
-        # ── Rule 2: Landscape / Document / Clothing ───────────────────────────
-        if dark_border_ratio < 0.12 and bright_neutral_ratio > 0.35:
-            return False, (
-                "Non-Retinal Image Rejected: Image appears to be a landscape, document, or object. "
-                "Please upload a valid ocular fundus scan."
-            )
-
-        # ── Rule 3: No fundus border AND no retinal red ───────────────────────
-        if dark_border_ratio < 0.12 and deep_red_ratio < 0.20:
-            return False, (
-                "Non-Retinal Image Rejected: Image lacks both the dark circular border and "
-                "the blood-red spectrum of a genuine ocular fundus photograph."
-            )
-
-        # ── Rule 4: Insufficient deep retinal red ─────────────────────────────
-        if deep_red_ratio < 0.18 and dark_border_ratio < 0.20:
-            return False, (
-                "Non-Retinal Image Rejected: Image lacks the deep ocular blood-red spectrum "
-                "of a retinal fundus photograph. Please upload a valid retinal scan."
-            )
-
-        return True, "OK"
-    except Exception as e:
-        print(f"[Validation] Error: {e}")
-        return True, "Skipped"
-
-
+# Load model on startup
+load_trained_keras_model()
 
 @app.get("/")
-@app.get("/health")
-def health():
-    return {"status": "online", "service": "DR Vision AI", "version": "3.0.0", "endpoint": "POST /predict"}
-
-
-@app.post("/predict")
-async def predict(request: Request, file: UploadFile = File(None)):
-    # Read bytes
-    data = None
-    if file is not None:
-        data = await file.read()
-    if not data:
-        try:
-            form = await request.form()
-            f = form.get("file")
-            if f and hasattr(f, "read"):
-                data = await f.read()
-        except Exception as e:
-            print(f"[DR] form parse error: {e}")
-
-    if not data:
-        # Even on fallback — run no validation since we have no image
-        return _fallback()
-
-    # Decode
-    try:
-        img = Image.open(io.BytesIO(data)).convert("RGB")
-    except Exception:
-        return {"is_valid": False, "error": "INVALID_FILE",
-                "message": "Cannot decode image. Upload a valid JPG/PNG retinal scan."}
-
-    # Validate BEFORE inference
-    ok, reason = _validate(img)
-    if not ok:
-        return {"is_valid": False, "error": "NON_RETINAL_IMAGE", "message": reason}
-
-    # ONNX inference
-    session = _load()
-    if session:
-        try:
-            t = np.expand_dims(
-                np.array(img.resize((224, 224)), dtype=np.float32) / 255.0, 0)
-            raw = session.run([_output_name], {_input_name: t})[0][0].tolist()
-            if min(raw) < 0 or not (0.95 < sum(raw) < 1.05):
-                e = np.exp(raw - np.max(raw)); raw = (e/e.sum()).tolist()
-            idx = int(np.argmax(raw))
-            return {
-                "is_valid": True,
-                "predicted_class": CLASSES[idx],
-                "confidence": round(float(raw[idx]), 4),
-                "probabilities": {CLASSES[i]: round(raw[i], 4) for i in range(5)},
-                "model_source": "ONNX EfficientNetB0",
-            }
-        except Exception as e:
-            print(f"[DR] inference error: {e}")
-
-    return _fallback()
-
-
-def _fallback():
+def read_root():
     return {
-        "is_valid": True,
-        "predicted_class": "Moderate",
-        "confidence": 0.874,
-        "probabilities": {"No_DR": 0.03, "Mild": 0.05, "Moderate": 0.874,
-                          "Severe": 0.026, "Proliferate_DR": 0.02},
-        "model_source": "Demonstration Simulator v3",
+        "status": "online",
+        "service": "DR Vision AI Endpoint",
+        "model_loaded": model_info["loaded"],
+        "model_path": model_info["source_path"],
+        "endpoint": "POST /predict"
     }
 
+@app.get("/model-info")
+def get_model_info():
+    return model_info
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    """
+    Accepts an uploaded retinal fundus image and returns live inference prediction JSON.
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Invalid file type. Retinal image file required.")
+
+    contents = await file.read()
+
+    if model is not None:
+        try:
+            # Determine target resolution from model input_shape (default to 224x224)
+            target_h = 224
+            target_w = 224
+            if hasattr(model, 'input_shape') and len(model.input_shape) == 4:
+                target_h = model.input_shape[1] if model.input_shape[1] is not None else 224
+                target_w = model.input_shape[2] if model.input_shape[2] is not None else 224
+
+            img = Image.open(io.BytesIO(contents)).convert('RGB')
+            img = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            
+            # Normalize to [0.0, 1.0]
+            img_array = np.array(img, dtype=np.float32) / 255.0
+            img_batch = np.expand_dims(img_array, axis=0)
+
+            raw_preds = model.predict(img_batch, verbose=0)[0]
+            
+            # Handle float conversions for JSON serialization
+            raw_preds = [float(p) for p in raw_preds]
+            
+            # Apply softmax if logits were output
+            if min(raw_preds) < 0 or sum(raw_preds) > 1.1 or sum(raw_preds) < 0.9:
+                exp_preds = np.exp(raw_preds - np.max(raw_preds))
+                raw_preds = (exp_preds / exp_preds.sum()).tolist()
+
+            max_idx = int(np.argmax(raw_preds))
+            predicted_class = CLASSES[max_idx] if max_idx < len(CLASSES) else f"Class_{max_idx}"
+            confidence = float(raw_preds[max_idx])
+
+            probabilities = {}
+            for i, class_name in enumerate(CLASSES):
+                probabilities[class_name] = round(raw_preds[i], 4) if i < len(raw_preds) else 0.0
+
+            return {
+                "predicted_class": predicted_class,
+                "confidence": round(confidence, 4),
+                "probabilities": probabilities,
+                "model_source": "Trained Keras Model (diabetic_retinopathy_model.keras)"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Inference execution error: {str(e)}")
+
+    # Fallback simulation response if model not present
+    return {
+        "predicted_class": "Moderate",
+        "confidence": 0.874,
+        "probabilities": {
+            "No_DR": 0.03,
+            "Mild": 0.05,
+            "Moderate": 0.874,
+            "Severe": 0.026,
+            "Proliferate_DR": 0.02
+        },
+        "model_source": "Demonstration Simulator"
+    }
 
 if __name__ == "__main__":
     import uvicorn

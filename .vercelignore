@@ -1,15 +1,12 @@
-# ── Exclude from Vercel Serverless Function bundle ────────────────────────────
-
-# Dev/build artifacts (not needed at runtime)
-archive/
-dr-vision-ai/
+# Build artifacts
 node_modules/
 dist/
 .git/
 .gitignore
 *.md
 
-# Large data files
+# Large dataset images (not needed on Vercel)
+archive/
 dataset/
 data/
 *.zip
@@ -25,15 +22,13 @@ data/
 *.ckpt
 diabetic_retinopathy_model.keras/
 
-# Test & dev scripts (not needed on Vercel)
+# Test scripts and duplicate folders
 test_live_api.py
+dr-vision-ai/
 dr-training/
 
-# Source files not needed server-side
-src/
-public/
-index.html
-vite.config.js
-package.json
-package-lock.json
-.oxlintrc.json
+# Python cache & virtualenvs
+__pycache__/
+*.pyc
+.venv/
+venv/

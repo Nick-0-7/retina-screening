@@ -42,18 +42,28 @@ model_info = {
     "classes": CLASSES
 }
 
-# Auto-discover model location
-MODEL_CANDIDATES = [
-    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.keras"),
-    r"C:\Users\AJINKYA\Downloads\diabetic_retinopathy_model.keras",
-    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.keras"),
-]
+def get_candidate_paths():
+    base_dirs = [
+        os.path.dirname(os.path.abspath(__file__)),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."),
+        os.getcwd(),
+        os.path.join(os.getcwd(), "backend"),
+    ]
+    candidates = []
+    for b in base_dirs:
+        candidates.append(os.path.join(b, "model", "diabetic_retinopathy_model.keras"))
+        candidates.append(os.path.join(b, "diabetic_retinopathy_model.keras"))
+    return candidates
 
 def load_trained_keras_model():
     global model, model_info
+    if model_info["loaded"]:
+        return True
     try:
         import keras
-        for candidate_path in MODEL_CANDIDATES:
+        for candidate_path in get_candidate_paths():
+            candidate_path = os.path.normpath(candidate_path)
             if os.path.exists(candidate_path):
                 print(f"[DR Vision AI] Found trained model at: {candidate_path}")
                 model = keras.models.load_model(candidate_path, compile=False)
@@ -64,20 +74,23 @@ def load_trained_keras_model():
                 
                 model_info["loaded"] = True
                 model_info["source_path"] = candidate_path
-                model_info["input_shape"] = [str(dim) for dim in in_shape]
-                model_info["output_shape"] = [str(dim) for dim in out_shape]
+                model_info["input_shape"] = [str(dim) for dim in in_shape] if in_shape else ["None", "224", "224", "3"]
+                model_info["output_shape"] = [str(dim) for dim in out_shape] if out_shape else ["None", "5"]
                 
                 print(f"[DR Vision AI] Model successfully loaded! Input shape: {in_shape}, Output shape: {out_shape}")
-                return
+                return True
         print("[DR Vision AI] No .keras model file found in candidate paths. Will use demonstration predictions.")
     except Exception as e:
         print(f"[DR Vision AI] Error loading Keras model: {e}")
+    return False
 
 # Load model on startup
 load_trained_keras_model()
 
 @app.get("/")
 def read_root():
+    if not model_info["loaded"]:
+        load_trained_keras_model()
     return {
         "status": "online",
         "service": "DR Vision AI Endpoint",
@@ -88,6 +101,8 @@ def read_root():
 
 @app.get("/model-info")
 def get_model_info():
+    if not model_info["loaded"]:
+        load_trained_keras_model()
     return model_info
 
 @app.post("/predict")

@@ -132,6 +132,7 @@ def validate_retinal_fundus_image(img: Image.Image):
 
 @app.get("/")
 @app.get("/api")
+@app.get("/predict")
 @app.get("/api/predict")
 async def health():
     load_model()

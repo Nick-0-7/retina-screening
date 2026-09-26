@@ -3,7 +3,39 @@
  * Handles communication with the FastAPI backend endpoint POST /predict
  */
 
-export const PREDICT_ENDPOINT = 'http://localhost:8000/predict';
+const CLOUD_FALLBACK_URL = 'https://retina-screening.vercel.app/api/predict';
+
+export function getCandidateEndpoints() {
+  const customUrl = import.meta.env?.VITE_API_URL;
+  if (customUrl) {
+    const formatted = customUrl.endsWith('/')
+      ? `${customUrl}predict`
+      : (customUrl.includes('/predict') ? customUrl : `${customUrl}/predict`);
+    return [formatted, CLOUD_FALLBACK_URL];
+  }
+
+  const isLocal = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (isLocal) {
+    return [
+      'http://localhost:8000/predict',
+      '/predict',
+      CLOUD_FALLBACK_URL
+    ];
+  }
+
+  return [
+    '/api/predict',
+    '/predict',
+    CLOUD_FALLBACK_URL
+  ];
+}
+
+export const PREDICT_ENDPOINT = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000/predict'
+    : '/api/predict';
 
 /**
  * Predict Diabetic Retinopathy severity from fundus image file or blob/dataUrl
@@ -34,36 +66,83 @@ export async function analyzeRetinalImage(imageInput) {
     throw new Error('No valid retinal image provided for analysis.');
   }
 
-  const formData = new FormData();
-  formData.append('file', fileToUpload);
+  const endpoints = getCandidateEndpoints();
+  let lastError = null;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  for (const endpoint of endpoints) {
+    const formData = new FormData();
+    formData.append('file', fileToUpload);
 
-  try {
-    const response = await fetch(PREDICT_ENDPOINT, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-    clearTimeout(timeoutId);
+    try {
+      console.log(`[DR Vision AI] Attempting prediction endpoint: ${endpoint}`);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`Server returned error status ${response.status}: ${errorText || 'Prediction failed'}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        let errorMessage = `Server error (${response.status})`;
+        try {
+          const errJson = await response.json();
+          if (errJson.detail) {
+            errorMessage = typeof errJson.detail === 'string'
+              ? errJson.detail
+              : (errJson.detail.message || JSON.stringify(errJson.detail));
+          } else if (errJson.message) {
+            errorMessage = errJson.message;
+          }
+        } catch {
+          const errorText = await response.text().catch(() => '');
+          if (errorText) errorMessage = errorText;
+        }
+
+        if (response.status === 400 || response.status === 422) {
+          throw new Error(errorMessage);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      return normalizeResponse(data);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn(`[DR Vision AI] Endpoint ${endpoint} failed:`, err.message);
+
+      if (err.message && (
+        err.message.includes('Non-Retinal') ||
+        err.message.includes('retinal scan') ||
+        err.message.includes('fundus photograph') ||
+        err.message.includes('Cannot decode image')
+      )) {
+        throw err;
+      }
+
+      lastError = err;
     }
-
-    const data = await response.json();
-    return normalizeResponse(data);
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.error('Backend API error:', err);
-    if (err.name === 'AbortError') {
-      throw new Error('Analysis timed out. Please check if the backend server is responsive.');
-    }
-    throw new Error(err.message || 'Failed to communicate with AI Backend at http://localhost:8000/predict');
   }
+
+  console.error('[DR Vision AI] All prediction endpoints failed. Last error:', lastError);
+  if (lastError?.name === 'AbortError') {
+    throw new Error('Analysis timed out. Please check your network connection or backend server.');
+  }
+
+  const isLocal = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (lastError?.message?.includes('Failed to fetch') || lastError?.message?.includes('NetworkError')) {
+    if (isLocal) {
+      throw new Error('Unable to connect to AI analysis server. Please start the local backend with "python backend/run_backend.py" or check your internet connection.');
+    }
+    throw new Error('Unable to connect to AI analysis server. Please check your internet connection and try again.');
+  }
+
+  throw new Error(lastError?.message || 'Failed to communicate with AI Backend.');
 }
 
 /**

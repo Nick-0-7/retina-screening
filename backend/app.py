@@ -32,60 +32,119 @@ CLASSES = ["No_DR", "Mild", "Moderate", "Severe", "Proliferate_DR"]
 
 # Global model state
 model = None
+ort_session = None
+ort_input_name = None
+ort_output_name = None
+model_engine = None
+
 model_info = {
     "loaded": False,
     "source_path": None,
+    "engine": None,
     "input_shape": None,
     "output_shape": None,
     "classes": CLASSES
 }
 
-# Auto-discover model location
-MODEL_CANDIDATES = [
-    os.path.join(os.path.dirname(__file__), "model", "diabetic_retinopathy_model.keras"),
-    r"C:\Users\AJINKYA\Downloads\diabetic_retinopathy_model.keras",
-    os.path.join(os.path.dirname(__file__), "diabetic_retinopathy_model.keras"),
-]
+def get_candidate_paths():
+    """Generates all prioritized candidate file paths for Keras and ONNX models."""
+    base_dirs = [
+        os.path.dirname(os.path.abspath(__file__)),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dr-vision-ai", "backend"),
+        os.getcwd(),
+        os.path.join(os.getcwd(), "backend"),
+    ]
+    candidates = []
+    
+    # 1. First look for trained Keras models (.keras)
+    for b in base_dirs:
+        candidates.append((os.path.join(b, "model", "diabetic_retinopathy_model.keras"), "keras"))
+        candidates.append((os.path.join(b, "diabetic_retinopathy_model.keras"), "keras"))
+    
+    # 2. Next look for ONNX models (.onnx) for fast lightweight inference
+    for b in base_dirs:
+        candidates.append((os.path.join(b, "model", "diabetic_retinopathy_model.onnx"), "onnx"))
+        candidates.append((os.path.join(b, "diabetic_retinopathy_model.onnx"), "onnx"))
+        
+    return candidates
 
-def load_trained_keras_model():
-    global model, model_info
-    try:
-        import keras
-        for candidate_path in MODEL_CANDIDATES:
-            if os.path.exists(candidate_path):
-                print(f"[DR Vision AI] Found trained model at: {candidate_path}")
+def load_model():
+    global model, ort_session, ort_input_name, ort_output_name, model_engine, model_info
+    if model_info["loaded"]:
+        return True
+
+    candidates = get_candidate_paths()
+
+    # Try Keras first if file exists
+    for candidate_path, engine_type in candidates:
+        candidate_path = os.path.normpath(candidate_path)
+        if os.path.exists(candidate_path) and engine_type == "keras":
+            try:
+                import keras
+                print(f"[DR Vision AI] Loading Keras model from: {candidate_path}")
                 model = keras.models.load_model(candidate_path, compile=False)
-                
-                # Extract input dimensions
                 in_shape = model.input_shape
                 out_shape = model.output_shape
-                
-                model_info["loaded"] = True
-                model_info["source_path"] = candidate_path
-                model_info["input_shape"] = [str(dim) for dim in in_shape]
-                model_info["output_shape"] = [str(dim) for dim in out_shape]
-                
-                print(f"[DR Vision AI] Model successfully loaded! Input shape: {in_shape}, Output shape: {out_shape}")
-                return
-        print("[DR Vision AI] No .keras model file found in candidate paths. Will use demonstration predictions.")
-    except Exception as e:
-        print(f"[DR Vision AI] Error loading Keras model: {e}")
+                model_engine = "keras"
+                model_info.update({
+                    "loaded": True,
+                    "source_path": candidate_path,
+                    "engine": "keras",
+                    "input_shape": [str(dim) for dim in in_shape] if in_shape else ["None", "224", "224", "3"],
+                    "output_shape": [str(dim) for dim in out_shape] if out_shape else ["None", "5"]
+                })
+                print(f"[DR Vision AI] Keras model successfully loaded! Input shape: {in_shape}, Output shape: {out_shape}")
+                return True
+            except Exception as e:
+                print(f"[DR Vision AI] Error loading Keras model from {candidate_path}: {e}")
+
+    # Fallback to ONNX if available
+    for candidate_path, engine_type in candidates:
+        candidate_path = os.path.normpath(candidate_path)
+        if os.path.exists(candidate_path) and engine_type == "onnx":
+            try:
+                import onnxruntime as ort
+                print(f"[DR Vision AI] Loading ONNX model from: {candidate_path}")
+                ort_session = ort.InferenceSession(candidate_path, providers=["CPUExecutionProvider"])
+                ort_input_name = ort_session.get_inputs()[0].name
+                ort_output_name = ort_session.get_outputs()[0].name
+                model_engine = "onnx"
+                model_info.update({
+                    "loaded": True,
+                    "source_path": candidate_path,
+                    "engine": "onnx",
+                    "input_shape": ["None", "224", "224", "3"],
+                    "output_shape": ["None", "5"]
+                })
+                print(f"[DR Vision AI] ONNX model successfully loaded from {candidate_path}")
+                return True
+            except Exception as e:
+                print(f"[DR Vision AI] Error loading ONNX model from {candidate_path}: {e}")
+
+    print("[DR Vision AI] No trained model could be loaded. Fallback simulator will be active.")
+    return False
 
 # Load model on startup
-load_trained_keras_model()
+load_model()
 
 @app.get("/")
 def read_root():
+    if not model_info["loaded"]:
+        load_model()
     return {
         "status": "online",
         "service": "DR Vision AI Endpoint",
         "model_loaded": model_info["loaded"],
         "model_path": model_info["source_path"],
+        "model_engine": model_info.get("engine"),
         "endpoint": "POST /predict"
     }
 
 @app.get("/model-info")
 def get_model_info():
+    if not model_info["loaded"]:
+        load_model()
     return model_info
 
 def validate_retinal_fundus_image(img: Image.Image):
@@ -161,6 +220,7 @@ def validate_retinal_fundus_image(img: Image.Image):
         return False, f"Image validation error: {str(e)}"
 
 @app.post("/predict")
+@app.post("/api/predict")
 async def predict(file: UploadFile = File(...)):
     """
     Accepts an uploaded retinal fundus image and returns live inference prediction JSON.
@@ -181,27 +241,25 @@ async def predict(file: UploadFile = File(...)):
     if not is_valid:
         raise HTTPException(status_code=400, detail=reason)
 
-    if model is not None:
+    if not model_info["loaded"]:
+        load_model()
+
+    # 1. Keras Inference
+    if model_engine == "keras" and model is not None:
         try:
-            # Determine target resolution from model input_shape (default to 224x224)
             target_h = 224
             target_w = 224
             if hasattr(model, 'input_shape') and len(model.input_shape) == 4:
                 target_h = model.input_shape[1] if model.input_shape[1] is not None else 224
                 target_w = model.input_shape[2] if model.input_shape[2] is not None else 224
 
-            img = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
-            
-            # Normalize to [0.0, 1.0]
-            img_array = np.array(img, dtype=np.float32) / 255.0
+            img_resized = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
+            img_array = np.array(img_resized, dtype=np.float32) / 255.0
             img_batch = np.expand_dims(img_array, axis=0)
 
             raw_preds = model.predict(img_batch, verbose=0)[0]
-            
-            # Handle float conversions for JSON serialization
             raw_preds = [float(p) for p in raw_preds]
             
-            # Apply softmax if logits were output
             if min(raw_preds) < 0 or sum(raw_preds) > 1.1 or sum(raw_preds) < 0.9:
                 exp_preds = np.exp(raw_preds - np.max(raw_preds))
                 raw_preds = (exp_preds / exp_preds.sum()).tolist()
@@ -210,18 +268,45 @@ async def predict(file: UploadFile = File(...)):
             predicted_class = CLASSES[max_idx] if max_idx < len(CLASSES) else f"Class_{max_idx}"
             confidence = float(raw_preds[max_idx])
 
-            probabilities = {}
-            for i, class_name in enumerate(CLASSES):
-                probabilities[class_name] = round(raw_preds[i], 4) if i < len(raw_preds) else 0.0
+            probabilities = {CLASSES[i]: round(raw_preds[i], 4) for i in range(len(CLASSES))}
 
             return {
                 "predicted_class": predicted_class,
                 "confidence": round(confidence, 4),
                 "probabilities": probabilities,
-                "model_source": "Trained Keras Model (diabetic_retinopathy_model.keras)"
+                "model_source": f"Trained Keras Model ({os.path.basename(model_info['source_path'])})"
             }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Inference execution error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Keras inference error: {str(e)}")
+
+    # 2. ONNX Inference
+    if model_engine == "onnx" and ort_session is not None:
+        try:
+            img_resized = img.resize((224, 224), Image.Resampling.BILINEAR)
+            img_array = np.array(img_resized, dtype=np.float32) / 255.0
+            img_batch = np.expand_dims(img_array, axis=0)
+
+            raw_preds = ort_session.run([ort_output_name], {ort_input_name: img_batch})[0][0].tolist()
+            raw_preds = [float(p) for p in raw_preds]
+
+            if min(raw_preds) < 0 or sum(raw_preds) > 1.1 or sum(raw_preds) < 0.9:
+                exp_preds = np.exp(raw_preds - np.max(raw_preds))
+                raw_preds = (exp_preds / exp_preds.sum()).tolist()
+
+            max_idx = int(np.argmax(raw_preds))
+            predicted_class = CLASSES[max_idx] if max_idx < len(CLASSES) else f"Class_{max_idx}"
+            confidence = float(raw_preds[max_idx])
+
+            probabilities = {CLASSES[i]: round(raw_preds[i], 4) for i in range(len(CLASSES))}
+
+            return {
+                "predicted_class": predicted_class,
+                "confidence": round(confidence, 4),
+                "probabilities": probabilities,
+                "model_source": f"Trained ONNX Model ({os.path.basename(model_info['source_path'])})"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"ONNX inference error: {str(e)}")
 
     # Fallback simulation response if model not present
     return {

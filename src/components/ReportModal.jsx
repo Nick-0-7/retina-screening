@@ -23,6 +23,16 @@ export default function ReportModal({
   patientData = {},
   doctorData = {},
 }) {
+  const reportId = useMemo(() => {
+    return `DRV${new Date().getFullYear()}${String(
+      new Date().getMonth() + 1
+    ).padStart(2, "0")}${String(
+      new Date().getDate()
+    ).padStart(2, "0")}${Math.floor(
+      1000 + Math.random() * 9000
+    )}`;
+  }, []);
+
   if (!isOpen || !predictionResult) return null;
 
   // =====================================================
@@ -50,16 +60,6 @@ export default function ReportModal({
   // =====================================================
   // REPORT INFORMATION
   // =====================================================
-
-  const reportId = useMemo(() => {
-    return `DRV${new Date().getFullYear()}${String(
-      new Date().getMonth() + 1
-    ).padStart(2, "0")}${String(
-      new Date().getDate()
-    ).padStart(2, "0")}${Math.floor(
-      1000 + Math.random() * 9000
-    )}`;
-  }, []);
 
   const reportDate = new Date().toLocaleDateString(
     "en-IN",
